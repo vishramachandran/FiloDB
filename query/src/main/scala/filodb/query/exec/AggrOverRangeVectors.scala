@@ -118,7 +118,7 @@ object RangeVectorAggregator {
       // now reduce each group and create one result range vector per group
       val groupedResult = mapReduceInternal(rvs, rowAgg, skipMapPhase, grouping)
       groupedResult.map { case (rvk, aggHolder) =>
-        val rowIterator = aggHolder.map(_.toRowReader)
+        val rowIterator = aggHolder.myMap(_.toRowReader)
         new IteratorBackedRangeVector(rvk, rowIterator)
       }
     }
@@ -139,11 +139,11 @@ object RangeVectorAggregator {
   private def mapReduceInternal(rvs: List[RangeVector],
                      rowAgg: RowAggregator,
                      skipMapPhase: Boolean,
-                     grouping: RangeVector => RangeVectorKey): Map[RangeVectorKey, Iterator[rowAgg.AggHolderType]] = {
+                     grouping: RangeVector => RangeVectorKey): Map[RangeVectorKey, CIterator[rowAgg.AggHolderType]] = {
     var acc = rowAgg.zero
     val mapInto = rowAgg.newRowToMapInto
     rvs.groupBy(grouping).mapValues { rvs =>
-      new Iterator[rowAgg.AggHolderType] {
+      new CIterator[rowAgg.AggHolderType] {
         val rowIterators = rvs.map(_.rows)
         val rvKeys = rvs.map(_.key)
         def hasNext: Boolean = rowIterators.forall(_.hasNext)
@@ -155,6 +155,7 @@ object RangeVectorAggregator {
           }
           acc
         }
+        def close(): Unit = rvs.foreach(_.rows.close())
       }
     }
   }
@@ -605,7 +606,7 @@ class QuantileRowAggregator(q: Double) extends RowAggregator {
 
   def present(aggRangeVector: RangeVector, limit: Int): Seq[RangeVector] = {
     val mutRow = new TransientRow()
-    val result = aggRangeVector.rows.map { r =>
+    val result = aggRangeVector.rows.myMap { r =>
       val qVal = ArrayDigest.fromBytes(r.getBuffer(1)).quantile(q)
       mutRow.setValues(r.getLong(0), qVal)
       mutRow

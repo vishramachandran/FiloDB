@@ -64,7 +64,7 @@ final case class InstantVectorFunctionMapper(function: InstantFunctionId,
             limit: Int,
             sourceSchema: ResultSchema): Observable[RangeVector] = {
     source.map { rv =>
-      val resultIterator: Iterator[RowReader] = new Iterator[RowReader]() {
+      val resultIterator: CIterator[RowReader] = new CIterator[RowReader]() {
 
         private val rows = rv.rows
         private val result = new TransientRow()
@@ -77,6 +77,8 @@ final case class InstantVectorFunctionMapper(function: InstantFunctionId,
           result.setValues(next.getLong(0), newValue)
           result
         }
+
+        def close(): Unit = rows.close()
       }
       IteratorBackedRangeVector(rv.key, resultIterator)
     }
@@ -101,7 +103,7 @@ final case class ScalarOperationMapper(operator: BinaryOperator,
             limit: Int,
             sourceSchema: ResultSchema): Observable[RangeVector] = {
     source.map { rv =>
-      val resultIterator: Iterator[RowReader] = new Iterator[RowReader]() {
+      val resultIterator: CIterator[RowReader] = new CIterator[RowReader]() {
 
         private val rows = rv.rows
         private val result = new TransientRow()
@@ -117,6 +119,8 @@ final case class ScalarOperationMapper(operator: BinaryOperator,
           result.setValues(next.getLong(0), newValue)
           result
         }
+
+        def close(): Unit = rows.close()
       }
       IteratorBackedRangeVector(rv.key, resultIterator)
     }

@@ -3,7 +3,7 @@ package filodb.query.exec
 import monix.reactive.Observable
 import org.jctools.queues.SpscUnboundedArrayQueue
 
-import filodb.core.query.{IteratorBackedRangeVector, RangeVector, ResultSchema}
+import filodb.core.query.{CIterator, IteratorBackedRangeVector, RangeVector, ResultSchema}
 import filodb.memory.format.RowReader
 import filodb.query.{Query, QueryConfig, RangeFunctionId}
 import filodb.query.exec.rangefn.{RangeFunction, Window}
@@ -56,13 +56,13 @@ class QueueBasedWindow(q: IndexedArrayQueue[TransientRow]) extends Window {
   * Decorates a raw series iterator to apply a range vector function
   * on periodic time windows
   */
-class SlidingWindowIterator(raw: Iterator[RowReader],
+class SlidingWindowIterator(raw: CIterator[RowReader],
                             start: Long,
                             step: Long,
                             end: Long,
                             window: Long,
                             rangeFunction: RangeFunction,
-                            queryConfig: QueryConfig) extends Iterator[TransientRow] {
+                            queryConfig: QueryConfig) extends CIterator[TransientRow] {
   private var sampleToEmit = new TransientRow()
   private var curWindowEnd = start
 
@@ -114,6 +114,9 @@ class SlidingWindowIterator(raw: Iterator[RowReader],
     curWindowEnd = curWindowEnd + step
     sampleToEmit
   }
+  def close(): Unit = {
+    raw.close()
+  }
 }
 
 /**
@@ -130,7 +133,7 @@ class TransientRowPool {
   * Iterator of mutable objects that allows look-ahead for ONE value.
   * Caller can do iterator.buffered safely
   */
-class BufferableIterator(iter: Iterator[RowReader]) extends Iterator[TransientRow] {
+class BufferableIterator(iter: CIterator[RowReader]) extends CIterator[TransientRow] {
   private var prev = new TransientRow()
   private var cur = new TransientRow()
   override def hasNext: Boolean = iter.hasNext
@@ -143,13 +146,15 @@ class BufferableIterator(iter: Iterator[RowReader]) extends Iterator[TransientRo
     cur.copyFrom(iter.next())
     cur
   }
+
+  def close(): Unit = iter.close()
 }
 
 /**
   * Used to create a monotonically increasing counter from raw reported counter values.
   * Is bufferable - caller can do iterator.buffered safely since it buffers ONE value
   */
-class BufferableCounterCorrectionIterator(iter: Iterator[RowReader]) extends Iterator[TransientRow] {
+class BufferableCounterCorrectionIterator(iter: CIterator[RowReader]) extends CIterator[TransientRow] {
   private var lastVal: Double = 0
   private var prev = new TransientRow()
   private var cur = new TransientRow()
@@ -171,9 +176,11 @@ class BufferableCounterCorrectionIterator(iter: Iterator[RowReader]) extends Ite
     cur.setDouble(1, lastVal)
     cur
   }
+
+  def close(): Unit = iter.close()
 }
 
-class DropOutOfOrderSamplesIterator(iter: Iterator[RowReader]) extends Iterator[TransientRow] {
+class DropOutOfOrderSamplesIterator(iter: CIterator[RowReader]) extends CIterator[TransientRow] {
   // Initial -1 time since it will be less than any valid timestamp and will allow first sample to go through
   private val cur = new TransientRow(-1, -1)
   private val nextVal = new TransientRow(-1, -1)
@@ -201,4 +208,6 @@ class DropOutOfOrderSamplesIterator(iter: Iterator[RowReader]) extends Iterator[
       }
     }
   }
+
+  def close(): Unit = iter.close()
 }

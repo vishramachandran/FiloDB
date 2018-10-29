@@ -133,8 +133,8 @@ final case class BinaryJoinExec(id: String,
     }
   }
 
-  private def binOp(lhsRows: Iterator[RowReader], rhsRows: Iterator[RowReader]): Iterator[RowReader] = {
-    new Iterator[RowReader] {
+  private def binOp(lhsRows: CIterator[RowReader], rhsRows: CIterator[RowReader]): CIterator[RowReader] = {
+    new CIterator[RowReader] {
       val cur = new TransientRow()
       val binFunc = binFunction(binaryOp)
       override def hasNext: Boolean = lhsRows.hasNext && rhsRows.hasNext
@@ -143,6 +143,10 @@ final case class BinaryJoinExec(id: String,
         val rhsRow = rhsRows.next()
         cur.setValues(lhsRow.getLong(0), binFunc(lhsRow.getDouble(1), rhsRow.getDouble(1)))
         cur
+      }
+      override def close(): Unit = {
+        lhsRows.close()
+        rhsRows.close()
       }
     }
   }

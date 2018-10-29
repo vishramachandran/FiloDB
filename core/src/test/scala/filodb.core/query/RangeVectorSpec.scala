@@ -13,9 +13,16 @@ class RangeVectorSpec  extends FunSpec with Matchers {
   val tuples = (numRawSamples until 0).by(-1).map(n => (now - n * reportingInterval, n.toDouble))
 
   class TuplesRangeVector(inputTuples: Seq[(Long, Double)]) extends RangeVector {
-    override def rows: Iterator[RowReader] = inputTuples.map { t =>
-      new SeqRowReader(Seq[Any](t._1, t._2))
-    }.iterator
+    override def rows: CIterator[RowReader] = {
+      val iter = inputTuples.map { t =>
+        new SeqRowReader(Seq[Any](t._1, t._2))
+      }.iterator
+      new CIterator[RowReader] {
+        override def close(): Unit = {}
+        override def hasNext: Boolean = iter.hasNext
+        override def next(): RowReader = iter.next()
+      }
+    }
     override def key: RangeVectorKey = new RangeVectorKey {
       def labelValues: Map[ZeroCopyUTF8String, ZeroCopyUTF8String] = Map.empty
       def sourceShards: Seq[Int] = Seq(0)

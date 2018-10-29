@@ -73,12 +73,24 @@ object CustomRangeVectorKey {
   val emptyAsZcUtf8 = toZcUtf8(CustomRangeVectorKey(Map.empty))
 }
 
+trait CIterator[+T] extends Iterator[T] {
+  def close(): Unit
+  def myMap[U](f: T=>U): CIterator[U] = {
+    val outer = this
+    new CIterator[U] {
+      override def close(): Unit = outer.close()
+      override def hasNext: Boolean = outer.hasNext
+      override def next(): U = f(outer.next())
+    }
+  }
+}
+
 /**
   * Represents a single result of any FiloDB Query.
   */
 trait RangeVector {
   def key: RangeVectorKey
-  def rows: Iterator[RowReader]
+  def rows: CIterator[RowReader]
 
   /**
     * Pretty prints all the elements into strings.
@@ -105,7 +117,7 @@ final case class RawDataRangeVector(key: RangeVectorKey,
                                     chunkMethod: ChunkScanMethod,
                                     columnIDs: Array[Int]) extends RangeVector {
   // Iterators are stateful, for correct reuse make this a def
-  def rows: Iterator[RowReader] = partition.timeRangeRows(chunkMethod, columnIDs)
+  def rows: CIterator[RowReader] = partition.timeRangeRows(chunkMethod, columnIDs)
 }
 
 /**
@@ -121,8 +133,13 @@ final class SerializableRangeVector(val key: RangeVectorKey,
                                     val schema: RecordSchema,
                                     startRecordNo: Int) extends RangeVector with java.io.Serializable {
   // Possible for records to spill across containers, so we read from all containers
-  override def rows: Iterator[RowReader] =
-    containers.toIterator.flatMap(_.iterate(schema)).drop(startRecordNo).take(numRows)
+  override def rows: CIterator[RowReader] =
+    new CIterator[RowReader] {
+      val inner = containers.toIterator.flatMap(_.iterate(schema)).drop(startRecordNo).take(numRows)
+      override def close(): Unit = {}
+      override def hasNext: Boolean = inner.hasNext
+      override def next(): RowReader = inner.next()
+    }
 }
 
 object SerializableRangeVector {
@@ -180,4 +197,4 @@ object SerializableRangeVector {
 }
 
 final case class IteratorBackedRangeVector(key: RangeVectorKey,
-                                           rows: Iterator[RowReader]) extends RangeVector
+                                           rows: CIterator[RowReader]) extends RangeVector
