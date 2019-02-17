@@ -22,7 +22,7 @@ import filodb.prometheus.query.PrometheusModel.Sampl
 import filodb.query.{LogicalPlan, QueryError, QueryResult}
 
 class PrometheusApiRoute(nodeCoord: ActorRef, settings: HttpSettings)(implicit am: ActorMaterializer)
-           extends FiloRoute with StrictLogging {
+           extends FiloRoute with StrictLogging with CorsHandler {
   import FailFastCirceSupport._
   import io.circe.generic.auto._
   import PromCirceSupport._ // needed to override Sampl case class Encoder.
@@ -32,30 +32,35 @@ class PrometheusApiRoute(nodeCoord: ActorRef, settings: HttpSettings)(implicit a
   val queryOptions = QueryOptions(spreadFunc = { _ => settings.queryDefaultSpread },
                                   sampleLimit = settings.querySampleLimit)
 
-  val route = pathPrefix( "promql" / Segment) { dataset =>
-    // Path: /promql/<datasetName>/api/v1/query_range
-    // Used to issue a promQL query for a time range with a `start` and `end` timestamp and at regular `step` intervals.
-    // For more details, see Prometheus HTTP API Documentation
-    // [Range Queries](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries)
-    path( "api" / "v1" / "query_range") {
-      get {
-        parameter('query.as[String], 'start.as[Double], 'end.as[Double], 'step.as[Int]) { (query, start, end, step) =>
-          val logicalPlan = Parser.queryRangeToLogicalPlan(query, TimeStepParams(start.toLong, step, end.toLong))
-          askQueryAndRespond(dataset, logicalPlan)
-        }
-      }
-    } ~
-    // Path: /promql/<datasetName>/api/v1/query
-    // Used to issue a promQL query for a single time instant `time`.  Can also be used to query raw data by issuing
-    // a PromQL range expression. For more details, see Prometheus HTTP API Documentation
-    // [Instant Queries](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries)
-    path( "api" / "v1" / "query") {
-      get {
-        parameter('query.as[String], 'time.as[Double]) { (query, time) =>
-          val logicalPlan = Parser.queryToLogicalPlan(query, time.toLong)
-          askQueryAndRespond(dataset, logicalPlan)
-        }
-      }
+  val route =
+    pathPrefix( "promql" / Segment) { dataset =>
+      corsHandler( // required to allow grafana CORS requests
+        // Path: /promql/<datasetName>/api/v1/query_range
+        // Used to issue a promQL query for a time range with a `start` and `end`
+        // timestamp and at regular `step` intervals.
+        // For more details, see Prometheus HTTP API Documentation
+        // [Range Queries](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries)
+        path( "api" / "v1" / "query_range") {
+          get {
+            parameter('query.as[String], 'start.as[Double], 'end.as[Double], 'step.as[Int]) {
+              (query, start, end, step) =>
+              val logicalPlan = Parser.queryRangeToLogicalPlan(query, TimeStepParams(start.toLong, step, end.toLong))
+              askQueryAndRespond(dataset, logicalPlan)
+            }
+          }
+        } ~
+        // Path: /promql/<datasetName>/api/v1/query
+        // Used to issue a promQL query for a single time instant `time`.  Can also be used to query raw data by issuing
+        // a PromQL range expression. For more details, see Prometheus HTTP API Documentation
+        // [Instant Queries](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries)
+        path( "api" / "v1" / "query") {
+          get {
+            parameter('query.as[String], 'time.as[Double]) { (query, time) =>
+              val logicalPlan = Parser.queryToLogicalPlan(query, time.toLong)
+              askQueryAndRespond(dataset, logicalPlan)
+            }
+          }
+        })
     } ~
     // Path: /promql/<datasetName>/api/v1/read
     // Used to extract raw data for integration with other TSDB systems.
@@ -83,21 +88,20 @@ class PrometheusApiRoute(nodeCoord: ActorRef, settings: HttpSettings)(implicit a
             qr.find(!_.isInstanceOf[filodb.query.QueryResult]) match {
               case Some(qe: QueryError) => complete(toPromErrorResponse(qe))
               case Some(UnknownDataset) => complete(Codes.NotFound ->
-                                           ErrorResponse("badQuery", s"Dataset $dataset is not registered"))
+                ErrorResponse("badQuery", s"Dataset $dataset is not registered"))
               case Some(a: Any)      => throw new IllegalStateException(s"Got $a as query response")
               case None              => val rrBytes = toPromReadResponse(qr.asInstanceOf[Seq[filodb.query.QueryResult]])
-                                        // Would have ideally liked to have the encoding driven by akka directives,
-                                        // but Akka doesnt support snappy out of the box.
-                                        // Elegant solution is a TODO for later.
-                                        val body = ByteString(Snappy.compress(rrBytes))
-                                        val entity = HttpEntity.Strict(MediaTypes.`application/octet-stream`, body)
-                                        complete(HttpResponse(entity = entity))
+                // Would have ideally liked to have the encoding driven by akka directives,
+                // but Akka doesnt support snappy out of the box.
+                // Elegant solution is a TODO for later.
+                val body = ByteString(Snappy.compress(rrBytes))
+                val entity = HttpEntity.Strict(MediaTypes.`application/octet-stream`, body)
+                complete(HttpResponse(entity = entity))
             }
           }
         }
       }
     }
-  }
 
   private def askQueryAndRespond(dataset: String, logicalPlan: LogicalPlan) = {
     val command = LogicalPlan2Query(DatasetRef.fromDotString(dataset), logicalPlan, queryOptions)
