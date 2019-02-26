@@ -12,9 +12,10 @@ trait QueryCommand extends NodeCommand with java.io.Serializable {
 
 trait QueryResponse extends NodeResponse with java.io.Serializable {
   def id: String
+  def order: Int
 }
 
-final case class QueryError(id: String, t: Throwable) extends QueryResponse with ErrorResponse {
+final case class QueryError(id: String, order: Int, t: Throwable) extends QueryResponse with ErrorResponse {
   override def toString: String = s"QueryError id=$id ${t.getClass.getName} ${t.getMessage}\n" +
     t.getStackTrace.map(_.toString).mkString("\n")
 }
@@ -34,6 +35,7 @@ object QueryResultType extends Enum[QueryResultType] {
 }
 
 final case class QueryResult(id: String,
+                             order: Int,
                              resultSchema: ResultSchema,
                              result: Seq[SerializableRangeVector]) extends QueryResponse {
   def resultType: QueryResultType = {

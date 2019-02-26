@@ -38,6 +38,8 @@ trait ExecPlan extends QueryCommand {
     */
   def id: String
 
+  def order: Int
+
   /**
     * Child execution plans representing sub-queries
     */
@@ -142,15 +144,15 @@ trait ExecPlan extends QueryCommand {
               s"Limit was: ${limit}")
           }
           qLogger.debug(s"queryId: ${id} Successful execution of ${getClass.getSimpleName} with transformers")
-          QueryResult(id, finalRes._2, r)
+          QueryResult(id, order, finalRes._2, r)
         }
         .onErrorHandle { case ex: Throwable =>
           qLogger.error(s"queryId: ${id} Exception during execution of query: ${printTree(false)}", ex)
-          QueryError(id, ex)
+          QueryError(id, order, ex)
         }
     } catch { case NonFatal(ex) =>
       qLogger.error(s"queryId: ${id} Exception during orchestration of query: ${printTree(false)}", ex)
-      Task(QueryError(id, ex))
+      Task(QueryError(id, order, ex))
     }
   }
 
@@ -235,11 +237,12 @@ abstract class NonLeafExecPlan extends ExecPlan {
                                (implicit sched: Scheduler,
                                 timeout: FiniteDuration): Observable[RangeVector] = {
     val spanFromHelper = Kamon.currentSpan()
-    val childTasks = Observable.fromIterable(children).mapAsync(Runtime.getRuntime.availableProcessors()) { plan =>
+    val childTasks = Observable.fromIterable(children.zipWithIndex).mapAsync(Runtime.getRuntime.availableProcessors()) {
+      case (plan, i) =>
       Kamon.withSpan(spanFromHelper) {
         plan.dispatcher.dispatch(plan).onErrorHandle { case ex: Throwable =>
           qLogger.error(s"queryId: ${id} Execution failed for sub-query ${plan.printTree()}", ex)
-          QueryError(id, ex)
+          QueryError(id, order, ex)
         }
       }
     }

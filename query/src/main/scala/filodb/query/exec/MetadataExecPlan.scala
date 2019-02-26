@@ -20,8 +20,9 @@ import filodb.query.Query.qLogger
 
 
 final case class PartKeysDistConcatExec(id: String,
-                                      dispatcher: PlanDispatcher,
-                                      children: Seq[ExecPlan]) extends NonLeafExecPlan {
+                                        order: Int,
+                                        dispatcher: PlanDispatcher,
+                                        children: Seq[ExecPlan]) extends NonLeafExecPlan {
 
   require(!children.isEmpty)
 
@@ -44,8 +45,8 @@ final case class PartKeysDistConcatExec(id: String,
 
     qLogger.debug(s"NonLeafMetadataExecPlan: Concatenating results")
     val taskOfResults = childResponses.map {
-      case QueryResult(_, _, result) => result
-      case QueryError(_, ex)         => throw ex
+      case QueryResult(_, _, _, result) => result
+      case QueryError(_, _, ex)         => throw ex
     }.toListL.map { resp =>
       IteratorBackedRangeVector(new CustomRangeVectorKey(Map.empty), rowIterAccumulator(resp))
     }
@@ -55,8 +56,9 @@ final case class PartKeysDistConcatExec(id: String,
 }
 
 final case class LabelValuesDistConcatExec(id: String,
-                                    dispatcher: PlanDispatcher,
-                                    children: Seq[ExecPlan]) extends NonLeafExecPlan {
+                                           order: Int,
+                                           dispatcher: PlanDispatcher,
+                                           children: Seq[ExecPlan]) extends NonLeafExecPlan {
 
   require(!children.isEmpty)
 
@@ -79,8 +81,8 @@ final case class LabelValuesDistConcatExec(id: String,
 
     qLogger.debug(s"NonLeafMetadataExecPlan: Concatenating results")
     val taskOfResults = childResponses.map {
-      case QueryResult(_, _, result) => result
-      case QueryError(_, ex)         => throw ex
+      case QueryResult(_, _, _, result) => result
+      case QueryError(_, _, ex)         => throw ex
     }.toListL.map { resp =>
       var metadataResult = scala.collection.mutable.Set.empty[Map[ZeroCopyUTF8String, ZeroCopyUTF8String]]
       resp.foreach(rv => {
@@ -100,6 +102,7 @@ final case class LabelValuesDistConcatExec(id: String,
 }
 
 final case class PartKeysExec(id: String,
+                              order: Int,
                               submitTime: Long,
                               limit: Int,
                               dispatcher: PlanDispatcher,
@@ -140,6 +143,7 @@ final case class PartKeysExec(id: String,
 }
 
 final case class  LabelValuesExec(id: String,
+                                  order: Int,
                                   submitTime: Long,
                                   limit: Int,
                                   dispatcher: PlanDispatcher,

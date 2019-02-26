@@ -21,6 +21,7 @@ import filodb.query.AggregationOperator._
   * hierarchical manner multiple times to arrive at result.
   */
 final case class ReduceAggregateExec(id: String,
+                                     order: Int,
                                      dispatcher: PlanDispatcher,
                                      childAggregates: Seq[ExecPlan],
                                      aggrOp: AggregationOperator,
@@ -34,8 +35,8 @@ final case class ReduceAggregateExec(id: String,
   protected def compose(childResponses: Observable[QueryResponse],
                         queryConfig: QueryConfig): Observable[RangeVector] = {
     val results = childResponses.flatMap {
-        case QueryResult(_, _, result) => Observable.fromIterable(result)
-        case QueryError(_, ex)         => throw ex
+        case QueryResult(_, _, _, result) => Observable.fromIterable(result)
+        case QueryError(_, _, ex)         => throw ex
     }
     RangeVectorAggregator.mapReduce(aggrOp, aggrParams, skipMapPhase = true, results, rv => rv.key)
   }

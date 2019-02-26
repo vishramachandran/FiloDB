@@ -33,6 +33,7 @@ import filodb.query.exec.binaryOp.BinaryOperatorFunction
   * @param ignoring fields from range vector keys to exclude while performing the join
   */
 final case class BinaryJoinExec(id: String,
+                                order: Int,
                                 dispatcher: PlanDispatcher,
                                 lhs: Seq[ExecPlan],
                                 rhs: Seq[ExecPlan],
@@ -61,12 +62,12 @@ final case class BinaryJoinExec(id: String,
   protected[exec] def compose(childResponses: Observable[QueryResponse],
                               queryConfig: QueryConfig): Observable[RangeVector] = {
     val taskOfResults = childResponses.map {
-      case QueryResult(_, _, result) => result
-      case QueryError(_, ex)         => throw ex
+      case qr: QueryResult => qr
+      case QueryError(_, _, ex)         => throw ex
     }.toListL.map { resp =>
       require(resp.size == lhs.size + rhs.size, "Did not get sufficient responses for LHS and RHS")
-      val lhsRvs = resp.take(lhs.size).flatten
-      val rhsRvs = resp.drop(lhs.size).flatten
+      val lhsRvs = resp.filter(_.order < lhs.size).map(_.result).flatten
+      val rhsRvs = resp.filter(_.order >= lhs.size).map(_.result).flatten
 
       // figure out which side is the "one" side
       val (oneSide, otherSide, lhsIsOneSide) =

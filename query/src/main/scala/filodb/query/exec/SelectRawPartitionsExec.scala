@@ -17,6 +17,7 @@ import filodb.query.QueryConfig
   * in the given shard, for the given row key range
   */
 final case class SelectRawPartitionsExec(id: String,
+                                         order: Int,
                                          submitTime: Long,
                                          limit: Int,
                                          dispatcher: PlanDispatcher,

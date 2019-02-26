@@ -33,6 +33,7 @@ object SelectChunkInfosExec {
   * ID (Long), NumRows (Int), startTime (Long), endTime (Long), numBytes(I) of chunk, readerclass of chunk
   */
 final case class SelectChunkInfosExec(id: String,
+                                      order: Int,
                                       submitTime: Long,
                                       limit: Int,
                                       dispatcher: PlanDispatcher,

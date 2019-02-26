@@ -20,6 +20,7 @@ case object EncodedChunks extends RowKeyRange
   * Simply concatenate results from child ExecPlan objects
   */
 final case class DistConcatExec(id: String,
+                                order: Int,
                                 dispatcher: PlanDispatcher,
                                 children: Seq[ExecPlan]) extends NonLeafExecPlan {
   require(!children.isEmpty)
