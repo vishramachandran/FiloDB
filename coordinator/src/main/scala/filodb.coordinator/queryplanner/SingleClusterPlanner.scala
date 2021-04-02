@@ -1,5 +1,6 @@
 package filodb.coordinator.queryplanner
 
+import scala.annotation.tailrec
 import scala.concurrent.duration._
 
 import akka.actor.ActorRef
@@ -226,10 +227,58 @@ class SingleClusterPlanner(dsRef: DatasetRef,
       case lp: ScalarFixedDoublePlan       => materializeFixedScalar(qContext, lp)
       case lp: ApplyAbsentFunction         => materializeAbsentFunction(qContext, lp)
       case lp: ScalarBinaryOperation       => materializeScalarBinaryOperation(qContext, lp)
-      case _                               => throw new BadQueryException("Invalid logical plan")
+      case lp: SubQueryWithWindowing       => materializeSubqueryWithWindowing(qContext, lp)
     }
   }
   // scalastyle:on cyclomatic.complexity
+
+
+  private def materializeSubqueryWithWindowing(qContext: QueryContext, lp: SubQueryWithWindowing): PlanResult = {
+
+    /**
+     * Example1:
+     * min_over_time(<someQueryReturningInstantVector>[3m:1m])
+     *
+     * outerStart = S
+     * outerEnd = E
+     * outerStep = 90s
+     *
+     * Resulting Exec Plan:
+     *
+     * - ApplySubqueryRangeFunction MinOverTime from S to E, at lookback of 3m, innerStep of 60s, outerStep = 90s
+     *     - Execute Range Query someQueryReturningInstantVector from start=S-3m until end=E at step=30 GCD(60,90)
+     *
+     *
+     * Example2:
+     * min_over_time(avg_over_time(<someNestedQueryReturningInstantVector>[6m:2m])[3m:1m])
+     *
+     * outerStart = S
+     * outerEnd = E
+     * outerStep = 90s
+     *
+     * - ApplySubqueryRangeFunction MinOverTime from S to E, at lookback of 3m, innerStep of 60s, outerStep = 90s
+     *    - Execute Range Query sum(avg_over_time(<anotherNestedQueryReturningInstantVector>[6m:2m])) from start=S-3m until end=E at step=30s i.e. GCD(60s,90s)
+     *         - ApplySubqueryRangeFunction AvgOverTime from S-3m to E, at lookback of 6m, innerStep of 120s, outerStep = 30s
+     *                - Execute Range Query <anotherNestedQueryReturningInstantVector> from start=S-3m-6m until end=E at step=30s i.e. GCD(30s,120s)
+     *
+     */
+
+    @tailrec def gcd(a: Long, b: Long): Long = if (b == 0) a else gcd(b, a % b)
+    val innerQueryRange = TimeRange(lp.startMs - lp.subQueryWindowMs, lp.endMs)
+    val innerQueryStepMs = gcd(lp.stepMs, lp.subQueryStepMs)
+    val modifiedInnerPlan = LogicalPlanUtils.copyLogicalPlanWithUpdatedTimeRange(lp.inner,
+      innerQueryRange, Some(innerQueryStepMs))
+    val innerExecPlan = walkLogicalPlanTree(modifiedInnerPlan, qContext)
+    val rangeFn = lp.function.map(f => InternalRangeFunction.lpToInternalFunc(f))
+    innerExecPlan.plans.foreach { p =>
+      p.addRangeVectorTransformer(ApplySubqueryRangeFunction(
+        RangeParams(lp.startMs / 1000, lp.stepMs / 1000, lp.endMs / 1000),
+        RangeParams(innerQueryRange.startMs / 1000, innerQueryStepMs / 1000, innerQueryRange.endMs / 1000),
+        rangeFn, lp.subQueryWindowMs, lp.subQueryStepMs))
+    }
+    innerExecPlan
+  }
+
 
   private def materializeBinaryJoin(qContext: QueryContext,
                                     lp: BinaryJoin): PlanResult = {

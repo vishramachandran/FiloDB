@@ -276,6 +276,9 @@ class ParserSpec extends AnyFunSpec with Matchers {
     parseSuccessfully("sum(rate(foo{job=\"SNRT-App-0\"}[5i]))")
     parseSuccessfully("rate(foo{job=\"SNRT-App-0\"}[5i]) + rate(bar{job=\"SNRT-App-0\"}[4i]) ")
 
+    // TODO parseError("sum(rate(foo[5m])[5m:1m])") // sum of subquery
+    //  parseError("log2(rate(foo[5m])[5m:1m])") // function of subquery
+
     // negative/positive test-cases for functions in RangeFunctionID
     // avg_over_time
     parseSuccessfully("avg_over_time(some_metric[5m])")
@@ -596,7 +599,16 @@ class ParserSpec extends AnyFunSpec with Matchers {
       "count((some_metric / 300) >= 1 ) or vector(0)" -> "BinaryJoin(Aggregate(Count,ScalarVectorBinaryOperation(GTE,ScalarFixedDoublePlan(1.0,RangeParams(1524855988,1000,1524855988)),ScalarVectorBinaryOperation(DIV,ScalarFixedDoublePlan(300.0,RangeParams(1524855988,1000,1524855988)),PeriodicSeries(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(some_metric))),List(),Some(300000),None),1524855988000,1000000,1524855988000,None),false),false),List(),List(),List()),LOR,ManyToMany,VectorPlan(ScalarFixedDoublePlan(0.0,RangeParams(1524855988,1000,1524855988))),List(),List(),List())",
       "count(some_metric / 300 >= 1 ) or vector(0)" -> "BinaryJoin(Aggregate(Count,ScalarVectorBinaryOperation(GTE,ScalarFixedDoublePlan(1.0,RangeParams(1524855988,1000,1524855988)),ScalarVectorBinaryOperation(DIV,ScalarFixedDoublePlan(300.0,RangeParams(1524855988,1000,1524855988)),PeriodicSeries(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(some_metric))),List(),Some(300000),None),1524855988000,1000000,1524855988000,None),false),false),List(),List(),List()),LOR,ManyToMany,VectorPlan(ScalarFixedDoublePlan(0.0,RangeParams(1524855988,1000,1524855988))),List(),List(),List())",
       "sum((some_metric))" -> "Aggregate(Sum,PeriodicSeries(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(some_metric))),List(),Some(300000),None),1524855988000,1000000,1524855988000,None),List(),List(),List()))",
-      "sum((foo + foo))" -> "Aggregate(Sum,BinaryJoin(PeriodicSeries(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(foo))),List(),Some(300000),None),1524855988000,1000000,1524855988000,None),ADD,OneToOne,PeriodicSeries(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(foo))),List(),Some(300000),None),1524855988000,1000000,1524855988000,None),List(),List(),List()),List(),List(),List())"
+      "sum((foo + foo))" -> "Aggregate(Sum,BinaryJoin(PeriodicSeries(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(foo))),List(),Some(300000),None),1524855988000,1000000,1524855988000,None),ADD,OneToOne,PeriodicSeries(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(foo))),List(),Some(300000),None),1524855988000,1000000,1524855988000,None),List(),List(),List()),List(),List(),List())",
+
+      "max_over_time(rate(foo[5m])[5m:1m])" -> "SubQueryWithWindowing(PeriodicSeriesWithWindowing(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(foo))),List(),Some(300000),None),1524855988000,1000000,1524855988000,300000,Rate,false,List(),None),1524855988000,1000000,1524855988000,Some(MaxOverTime),300000,60000)",
+      "max_over_time(sum(foo)[5m:1m])" -> "SubQueryWithWindowing(Aggregate(Sum,PeriodicSeries(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(foo))),List(),Some(300000),None),1524855988000,1000000,1524855988000,None),List(),List(),List()),1524855988000,1000000,1524855988000,Some(MaxOverTime),300000,60000)",
+      "sum(foo)[5m:1m]" -> "SubQueryWithWindowing(Aggregate(Sum,PeriodicSeries(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(foo))),List(),Some(300000),None),1524855988000,1000000,1524855988000,None),List(),List(),List()),1524855988000,1000000,1524855988000,None,300000,60000)",
+      "avg_over_time(max_over_time(rate(foo[5m])[5m:1m])[10m:2m])" -> "SubQueryWithWindowing(SubQueryWithWindowing(PeriodicSeriesWithWindowing(RawSeries(IntervalSelector(1524855988000,1524855988000),List(ColumnFilter(__name__,Equals(foo))),List(),Some(300000),None),1524855988000,1000000,1524855988000,300000,Rate,false,List(),None),1524855988000,1000000,1524855988000,Some(MaxOverTime),300000,60000),1524855988000,1000000,1524855988000,Some(AvgOverTime),600000,120000)"
+      // TODO "foo[5m:1m]" -> ""
+      // TODO "(foo + bar)[5m:1m]" -> ""
+      // TODO "sum_over_time((foo + bar)[5m:1m])" -> ""
+
     )
 
     val qts: Long = 1524855988L

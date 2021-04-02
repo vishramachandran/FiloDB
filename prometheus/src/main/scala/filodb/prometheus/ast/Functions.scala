@@ -45,7 +45,7 @@ case class Function(name: String, allParams: Seq[Expression]) extends Expression
       paramSpec.zipWithIndex.foreach {
         case (specType, index) => specType match {
           case RangeVectorParam(errorMsg) =>
-            if (!allParams(index).isInstanceOf[RangeExpression])
+            if (!allParams(index).isInstanceOf[RangeExpression] && !allParams(index).isInstanceOf[SubqueryExpression])
               throw new IllegalArgumentException(s"$errorMsg $funcName, " +
                 s"got ${allParams(index).getClass.getSimpleName}")
 
@@ -180,15 +180,21 @@ case class Function(name: String, allParams: Seq[Expression]) extends Expression
           timeParams.start * 1000, timeParams.step * 1000, timeParams.end * 1000, 0,
           rangeFunctionId, false, otherParams, instantExpression.offset.map(_.millis(timeParams.step * 1000)))
       } else {
-        val rangeExpression = seriesParam.asInstanceOf[RangeExpression]
-
-        // absent_over_time creates range vector with column filters in original query
-        PeriodicSeriesWithWindowing(
-          rangeExpression.toSeriesPlan(timeParams, isRoot = false),
-          timeParams.start * 1000 , timeParams.step * 1000, timeParams.end * 1000,
-          rangeExpression.window.millis(timeParams.step * 1000),
-          rangeFunctionId, rangeExpression.window.timeUnit == IntervalMultiple,
-          otherParams, rangeExpression.offset.map(_.millis(timeParams.step * 1000)), rangeExpression.columnFilters)
+        seriesParam match {
+          case rangeExpression: RangeExpression =>
+            // absent_over_time creates range vector with column filters in original query
+            PeriodicSeriesWithWindowing(
+              rangeExpression.toSeriesPlan(timeParams, isRoot = false),
+              timeParams.start * 1000 , timeParams.step * 1000, timeParams.end * 1000,
+              rangeExpression.window.millis(timeParams.step * 1000),
+              rangeFunctionId, rangeExpression.window.timeUnit == IntervalMultiple,
+              otherParams, rangeExpression.offset.map(_.millis(timeParams.step * 1000)), rangeExpression.columnFilters)
+          case se: SubqueryExpression =>
+            SubQueryWithWindowing(se.subquery.toSeriesPlan(timeParams),
+              timeParams.start * 1000 , timeParams.step * 1000, timeParams.end * 1000,
+              Some(rangeFunctionId), se.sqcl.window.millis(timeParams.step * 1000),
+              se.sqcl.step.millis(timeParams.step * 1000))
+        }
       }
     }
   }

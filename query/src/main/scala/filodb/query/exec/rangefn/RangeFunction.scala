@@ -280,26 +280,34 @@ object RangeFunction {
             columnType: ColumnType,
             config: QueryConfig,
             funcParams: Seq[FuncArgs] = Nil,
-            useChunked: Boolean): BaseRangeFunction =
-    generatorFor(schema, func, columnType, config, funcParams, useChunked)()
+            useChunked: Boolean,
+            skip: Option[Int] = None): BaseRangeFunction =
+    generatorFor(schema, func, columnType, config, funcParams, useChunked, skip)()
 
   /**
    * Given a function type and column type, returns a RangeFunctionGenerator
+   *
+   * @param skip If set, range function is calculated using every "skip"th sample
+   *             of the window instead of using all samples
    */
   def generatorFor(schema: ResultSchema,
                    func: Option[InternalRangeFunction],
                    columnType: ColumnType,
                    config: QueryConfig,
                    funcParams: Seq[FuncArgs] = Nil,
-                   useChunked: Boolean = true): RangeFunctionGenerator = {
-    if (useChunked) columnType match {
-      case ColumnType.DoubleColumn => doubleChunkedFunction(schema, func, config, funcParams)
-      case ColumnType.LongColumn => longChunkedFunction(schema, func, funcParams)
-      case ColumnType.TimestampColumn => longChunkedFunction(schema, func, funcParams)
-      case ColumnType.HistogramColumn => histChunkedFunction(schema, func, funcParams)
-      case other: ColumnType => throw new IllegalArgumentException(s"Column type $other not supported")
+                   useChunked: Boolean = true,
+                   skip: Option[Int] = None): RangeFunctionGenerator = {
+    if (useChunked) {
+      require(skip.isEmpty, s"Chunked iterators does not support skipping items in range function")
+      columnType match {
+        case ColumnType.DoubleColumn => doubleChunkedFunction(schema, func, config, funcParams)
+        case ColumnType.LongColumn => longChunkedFunction(schema, func, funcParams)
+        case ColumnType.TimestampColumn => longChunkedFunction(schema, func, funcParams)
+        case ColumnType.HistogramColumn => histChunkedFunction(schema, func, funcParams)
+        case other: ColumnType => throw new IllegalArgumentException(s"Column type $other not supported")
+      }
     } else {
-      iteratingFunction(func, funcParams)
+      iteratingFunction(func, funcParams, skip)
     }
   }
 
@@ -324,7 +332,7 @@ object RangeFunction {
       case Some(QuantileOverTime) => () => new QuantileOverTimeChunkedFunctionL(funcParams)
       case Some(PredictLinear)    => () => new PredictLinearChunkedFunctionL(funcParams)
       case Some(Last)             => () => new LastSampleChunkedFunctionL
-      case _                      => iteratingFunction(func, funcParams)
+      case _                      => iteratingFunction(func, funcParams, None)
     }
   }
 
@@ -357,7 +365,7 @@ object RangeFunction {
       case Some(Timestamp)        => () => new TimestampChunkedFunction()
       case Some(ZScore)           => () => new ZScoreChunkedFunctionD()
       case Some(PredictLinear)    => () => new PredictLinearChunkedFunctionD(funcParams)
-      case _                      => iteratingFunction(func, funcParams)
+      case _                      => iteratingFunction(func, funcParams, None)
     }
   }
   // scalastyle:on cyclomatic.complexity
@@ -388,8 +396,10 @@ object RangeFunction {
    * Returns a function to generate the RangeFunction for SlidingWindowIterator.
    * Note that these functions are Double-based, so a converting iterator eg LongToDoubleIterator may be needed.
    */
+  // scalastyle:off cyclomatic.complexity
   def iteratingFunction(func: Option[InternalRangeFunction],
-                        funcParams: Seq[Any] = Nil): RangeFunctionGenerator = func match {
+                        funcParams: Seq[Any] = Nil,
+                        skip: Option[Int]): RangeFunctionGenerator = func match {
     // when no window function is asked, use last sample for instant
     case None                   => () => LastSampleFunction
     case Some(Last)             => () => LastSampleFunction
@@ -400,14 +410,23 @@ object RangeFunction {
     case Some(Irate)            => () => IRateFunction
     case Some(Idelta)           => () => IDeltaFunction
     case Some(Deriv)            => () => DerivFunction
-    case Some(MaxOverTime)      => () => new MinMaxOverTimeFunction(Ordering[Double])
-    case Some(MinOverTime)      => () => new MinMaxOverTimeFunction(Ordering[Double].reverse)
+    case Some(MaxOverTime)      => () => new MinMaxOverTimeFunction(Ordering[Double], skip)
+    case Some(MinOverTime)      => () => new MinMaxOverTimeFunction(Ordering[Double].reverse, skip)
     case Some(CountOverTime)    => () => new CountOverTimeFunction()
-    case Some(SumOverTime)      => () => new SumOverTimeFunction()
+    case Some(SumOverTime)      => () => new SumOverTimeFunction(skip)
     case Some(AvgOverTime)      => () => new AvgOverTimeFunction()
     case Some(StdDevOverTime)   => () => new StdDevOverTimeFunction()
     case Some(StdVarOverTime)   => () => new StdVarOverTimeFunction()
-    case _                      => ???
+    case Some(Timestamp)        => ???
+    case Some(ZScore)           => ???
+    case Some(HoltWinters)      => ???
+    case Some(PredictLinear)    => ???
+    case Some(SumAndMaxOverTime)=> ???
+    case Some(QuantileOverTime) => ???
+    case Some(LastSampleHistMax)=> ???
+    case Some(AvgWithSumAndCountOverTime) => ???
+    case Some(Changes)          => ???
+    case Some(AbsentOverTime)   => ???
   }
 }
 

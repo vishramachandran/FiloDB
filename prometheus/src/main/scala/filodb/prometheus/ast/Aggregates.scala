@@ -58,10 +58,14 @@ case class AggregateExpression(name: String, params: Seq[Expression],
 
   val last: Expression = if (allParams.size == 1) allParams.head else allParams(1)
   lazy val series: PeriodicSeries = last match {
+    case _: SubqueryExpression =>
+      throw new IllegalArgumentException(
+        s"Second parameter to aggregate operator $name should be an instant vector, is instead $last"
+      )
     case s: PeriodicSeries => s
     case _ =>
       throw new IllegalArgumentException(
-        s"Second parameter to aggregate operator $name should be a vector, is instead $last"
+        s"Second parameter to aggregate operator $name should be an instant vector, is instead $last"
       )
   }
 

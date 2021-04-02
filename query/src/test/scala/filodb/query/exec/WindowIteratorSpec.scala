@@ -254,6 +254,44 @@ class WindowIteratorSpec extends RawDataWindowingSpec {
     }
   }
 
+  it("should deal with skips used in subqueries SumOverTime") {
+    val samples = Seq(
+      0L -> 0d, 1L -> 1d, 2L -> 2d, 3L -> 3d, 4L -> 4d, 5L -> 5d, 6L -> 6d,
+      7L -> 7d, 8L -> 8d, 9L -> 9d, 10L -> 10d, 11L -> 11d, 12L -> 12d,
+      13L -> 13d, 14L -> 14d, 15L -> 15d, 16L -> 16d, 17L -> 17d, 18L -> 18d, 19L -> 19d, 20L -> 20d
+    )
+    val windowResults = Seq(
+      6L -> 12d, 8L -> 18d, 10L -> 24d, 12L -> 30d, 14L -> 36d, 16L -> 42d, 18L -> 48d, 20L -> 54d
+    )
+
+    val rawRows = samples.map(s => new TransientRow(s._1, s._2))
+    import filodb.core.query.NoCloseCursor._
+    val slidingWinIterator = new SlidingWindowIterator(rawRows.iterator, 6L, 2, 20L, 6L,
+      RangeFunction(tsResSchema,
+        Some(InternalRangeFunction.SumOverTime), ColumnType.DoubleColumn, queryConfig,
+        useChunked = false, skip = Some(2)).asSliding, queryConfig)
+    slidingWinIterator.map(r => (r.getLong(0) -> r.getDouble(1))).toList shouldEqual windowResults
+
+  }
+
+  it("should deal with skips used in subqueries MaxOverTime") {
+    val samples = Seq(
+      0L -> 0d, 1L -> 1d, 2L -> 2d, 3L -> 3d, 4L -> 4d, 5L -> 5d, 6L -> 6d,
+      7L -> 7d, 8L -> 8d, 9L -> 9d, 10L -> 10d, 11L -> 11d, 12L -> 12d,
+      13L -> 13d, 14L -> 14d, 15L -> 15d, 16L -> 16d, 17L -> 17d, 18L -> 18d, 19L -> 19d, 20L -> 20d
+    )
+    val windowResults = Seq(6L -> 2d, 8L -> 4d, 10L -> 6d, 12L -> 8d, 14L -> 10d, 16L -> 12d, 18L -> 14d, 20L -> 16d)
+
+    val rawRows = samples.map(s => new TransientRow(s._1, s._2))
+    import filodb.core.query.NoCloseCursor._
+    val slidingWinIterator = new SlidingWindowIterator(rawRows.iterator, 6L, 2, 20L, 6L,
+      RangeFunction(tsResSchema,
+        Some(InternalRangeFunction.MaxOverTime), ColumnType.DoubleColumn, queryConfig,
+        useChunked = false, skip = Some(2)).asSliding, queryConfig)
+    slidingWinIterator.map(r => (r.getLong(0) -> r.getDouble(1))).toList shouldEqual windowResults
+
+  }
+
   it("should deal with NaN end of time series marker during counter correction") {
     val samples = Seq(
       1614821996000L -> Double.NaN,

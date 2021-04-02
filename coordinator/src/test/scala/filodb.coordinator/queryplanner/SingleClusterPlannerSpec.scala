@@ -197,6 +197,27 @@ class SingleClusterPlannerSpec extends AnyFunSpec with Matchers with ScalaFuture
     }
   }
 
+  it("should generate correct plan for subqueries with one child node for subquery") {
+    val lp = Parser.queryRangeToLogicalPlan("""min_over_time(sum(rate(foo{job="bar"}[5m]))[3m:1m])""",
+      TimeStepParams(20900, 90, 21800))
+    val execPlan = engine.materialize(lp, QueryContext(origQueryParams = promQlQueryParams))
+    println(execPlan.printTree())
+  }
+
+  it("should generate correct plan for subqueries with multiple child nodes for subqueries") {
+    val lp = Parser.queryRangeToLogicalPlan("""min_over_time(rate(foo{job="bar"}[5m])[3m:1m])""",
+      TimeStepParams(20900, 90, 21800))
+    val execPlan = engine.materialize(lp, QueryContext(origQueryParams = promQlQueryParams))
+    println(execPlan.printTree())
+  }
+
+  it("should generate correct plan for nested subqueries") {
+    val lp = Parser.queryRangeToLogicalPlan("""avg_over_time(max_over_time(rate(foo{job="bar"}[5m])[5m:1m])[10m:2m])""",
+      TimeStepParams(20900, 90, 21800))
+    val execPlan = engine.materialize(lp, QueryContext(origQueryParams = promQlQueryParams))
+    println(execPlan.printTree())
+  }
+
   it("should stitch results when spread changes during query range") {
     val lp = Parser.queryRangeToLogicalPlan("""foo{job="bar"}""", TimeStepParams(20000, 100, 30000))
     def spread(filter: Seq[ColumnFilter]): Seq[SpreadChange] = {

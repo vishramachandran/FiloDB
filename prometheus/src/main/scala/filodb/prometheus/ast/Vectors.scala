@@ -89,7 +89,13 @@ case class VectorMatch(matching: Option[JoinMatching],
 }
 
 case class SubqueryExpression(subquery: PeriodicSeries, sqcl: SubqueryClause) extends Expression with PeriodicSeries {
-  def toSeriesPlan(timeParams: TimeRangeParams): PeriodicSeriesPlan = ???
+  def toSeriesPlan(timeParams: TimeRangeParams): PeriodicSeriesPlan = {
+    // if no range function is chosen, Last is implicit range function
+    SubQueryWithWindowing(subquery.toSeriesPlan(timeParams),
+      timeParams.start * 1000 , timeParams.step * 1000, timeParams.end * 1000,
+      None, sqcl.window.millis(timeParams.step * 1000),
+      sqcl.step.millis(timeParams.step * 1000))
+  }
 }
 
 sealed trait Vector extends Expression {

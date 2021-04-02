@@ -260,7 +260,7 @@ class AggrOverTimeFunctionsSpec extends RawDataWindowingSpec {
       val windowSize = rand.nextInt(100) + 10
       val step = rand.nextInt(75) + 5
       info(s"iteration $x windowSize=$windowSize step=$step")
-      val slidingIt = slidingWindowIt(data, rv, new SumOverTimeFunction(), windowSize, step)
+      val slidingIt = slidingWindowIt(data, rv, new SumOverTimeFunction(None), windowSize, step)
       val aggregated = slidingIt.map(_.getDouble(1)).toBuffer
       slidingIt.close()
       // drop first sample because of exclusive start
@@ -322,7 +322,7 @@ class AggrOverTimeFunctionsSpec extends RawDataWindowingSpec {
       val step = rand.nextInt(75) + 5
       info(s"iteration $x windowSize=$windowSize step=$step")
 
-      val minSlidingIt = slidingWindowIt(data, rv, new MinMaxOverTimeFunction(Ordering[Double].reverse), windowSize, step)
+      val minSlidingIt = slidingWindowIt(data, rv, new MinMaxOverTimeFunction(Ordering[Double].reverse, None), windowSize, step)
       val aggregated = minSlidingIt.map(_.getDouble(1)).toBuffer
       minSlidingIt.close()
       // drop first sample because of exclusive start
@@ -332,7 +332,7 @@ class AggrOverTimeFunctionsSpec extends RawDataWindowingSpec {
       val aggregated2 = minChunkedIt.map(_.getDouble(1)).toBuffer
       aggregated2 shouldEqual data.sliding(windowSize, step).map(_.drop(1).min).toBuffer
 
-      val maxSlidingIt = slidingWindowIt(data, rv, new MinMaxOverTimeFunction(Ordering[Double]), windowSize, step)
+      val maxSlidingIt = slidingWindowIt(data, rv, new MinMaxOverTimeFunction(Ordering[Double], None), windowSize, step)
       val aggregated3 = maxSlidingIt.map(_.getDouble(1)).toBuffer
       maxSlidingIt.close()
       // drop first sample because of exclusive start

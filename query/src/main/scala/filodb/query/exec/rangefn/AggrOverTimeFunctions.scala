@@ -4,6 +4,7 @@ import java.lang.{Double => JLDouble}
 
 import debox.Buffer
 import java.util
+import spire.syntax.cfor._
 
 import filodb.core.query.{QueryConfig, TransientHistMaxRow, TransientHistRow, TransientRow}
 import filodb.core.store.ChunkSetInfoReader
@@ -12,23 +13,36 @@ import filodb.memory.format.{vectors => bv}
 import filodb.memory.format.vectors.DoubleIterator
 import filodb.query.exec.{FuncArgs, StaticFuncArgs}
 
-class MinMaxOverTimeFunction(ord: Ordering[Double]) extends RangeFunction {
+class MinMaxOverTimeFunction(ord: Ordering[Double], skip: Option[Int]) extends RangeFunction {
   val minMaxDeque = new util.ArrayDeque[TransientRow]()
 
   override def addedToWindow(row: TransientRow, window: Window): Unit = {
-    while (!minMaxDeque.isEmpty && ord.compare(minMaxDeque.peekLast().value, row.value) < 0) minMaxDeque.removeLast()
-    minMaxDeque.addLast(row)
+    if (skip.isEmpty) {
+      while (!minMaxDeque.isEmpty && ord.compare(minMaxDeque.peekLast().value, row.value) < 0) minMaxDeque.removeLast()
+      minMaxDeque.addLast(row)
+    }
   }
 
   override def removedFromWindow(row: TransientRow, window: Window): Unit = {
-    while (!minMaxDeque.isEmpty && minMaxDeque.peekFirst().timestamp <= row.timestamp) minMaxDeque.removeFirst()
+    if (skip.isEmpty) {
+      while (!minMaxDeque.isEmpty && minMaxDeque.peekFirst().timestamp <= row.timestamp) minMaxDeque.removeFirst()
+    }
   }
 
   override def apply(startTimestamp: Long, endTimestamp: Long, window: Window,
                      sampleToEmit: TransientRow,
                      queryConfig: QueryConfig): Unit = {
-    if (minMaxDeque.isEmpty) sampleToEmit.setValues(endTimestamp, Double.NaN)
-    else sampleToEmit.setValues(endTimestamp, minMaxDeque.peekFirst().value)
+    if (skip.isDefined) {
+      var minMax = if (ord.compare(0d, 1d) > 0) scala.Double.MinValue else scala.Double.MaxValue
+      cforRange { window.size-1 to  0 by -skip.get } { i =>
+        if (!JLDouble.isNaN(window(i).value))
+          minMax = if (ord.compare(minMax, window(i).value) > 0) window(i).value else minMax
+      }
+      sampleToEmit.setValues(endTimestamp, minMax)
+    } else {
+      if (minMaxDeque.isEmpty) sampleToEmit.setValues(endTimestamp, Double.NaN)
+      else sampleToEmit.setValues(endTimestamp, minMaxDeque.peekFirst().value)
+    }
   }
 }
 
@@ -110,9 +124,11 @@ class MaxOverTimeChunkedFunctionL(var max: Long = Long.MinValue) extends Chunked
   }
 }
 
-class SumOverTimeFunction(var sum: Double = Double.NaN, var count: Int = 0) extends RangeFunction {
+class SumOverTimeFunction(skip: Option[Int]) extends RangeFunction {
+  var sum: Double = Double.NaN
+  var count: Int = 0
   override def addedToWindow(row: TransientRow, window: Window): Unit = {
-    if (!JLDouble.isNaN(row.value)) {
+    if (skip.isEmpty && !JLDouble.isNaN(row.value)) {
       if (sum.isNaN) {
         sum = 0d
       }
@@ -122,7 +138,7 @@ class SumOverTimeFunction(var sum: Double = Double.NaN, var count: Int = 0) exte
   }
 
   override def removedFromWindow(row: TransientRow, window: Window): Unit = {
-    if (!JLDouble.isNaN(row.value)) {
+    if (skip.isEmpty && !JLDouble.isNaN(row.value)) {
       if (sum.isNaN) {
         sum = 0d
       }
@@ -137,6 +153,13 @@ class SumOverTimeFunction(var sum: Double = Double.NaN, var count: Int = 0) exte
   override def apply(startTimestamp: Long, endTimestamp: Long, window: Window,
                      sampleToEmit: TransientRow,
                      queryConfig: QueryConfig): Unit = {
+    if (skip.isDefined) {
+      sum = 0d
+      cforRange { window.size-1 to  0 by -skip.get } { i =>
+        if (!JLDouble.isNaN(window(i).value))
+        sum = sum + window(i).value
+      }
+    }
     sampleToEmit.setValues(endTimestamp, sum)
   }
 }

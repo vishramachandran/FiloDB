@@ -195,7 +195,7 @@ trait UnitParser extends BaseParser {
     case d ~ tu => Duration(d.toDouble, tu)
   }
 
-  lazy val subqueryClause: PackratParser[SubqueryClause] = "[" ~ duration ~ ":" ~ duration.? ~ "]" ^^ {
+  lazy val subqueryClause: PackratParser[SubqueryClause] = "[" ~ duration ~ ":" ~ duration ~ "]" ^^ {
     case leftBracket ~ timeRange ~ colon ~ step ~ rightBracket => SubqueryClause(timeRange, step)
   }
 
@@ -497,6 +497,7 @@ object LegacyParser extends ExpressionParser with StrictLogging {
       case a: AggregateExpression   => val paramsNew  = a.params.map(removePrecedenceExpression(_))
                                        val altParams  = a.altFunctionParams.map(removePrecedenceExpression(_))
                                        a.copy(params = paramsNew, altFunctionParams = altParams)
+      case s: SubqueryExpression    => s
       case s: Scalar                => s
       case i: InstantExpression     => i
       case r: RangeExpression       => r

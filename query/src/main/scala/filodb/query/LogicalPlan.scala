@@ -156,6 +156,22 @@ case class PeriodicSeries(rawSeries: RawSeriesLikePlan,
 }
 
 /**
+ * Issue query_range API
+ * sum_over_time(<someExpression>[5m:1m]) with start=S, end=E, step=ST
+ */
+case class SubQueryWithWindowing(inner: PeriodicSeriesPlan, // someExpression
+                                 startMs: Long, // S
+                                 stepMs: Long, // ST
+                                 endMs: Long, // E
+                                 function: Option[RangeFunctionId], // sum_over_time
+                                 subQueryWindowMs: Long, // 5m
+                                 subQueryStepMs: Long)  // 1m
+          extends PeriodicSeriesPlan with NonLeafLogicalPlan {
+  override def children: Seq[LogicalPlan] = Seq(inner)
+  override def replacePeriodicSeriesFilters(filters: Seq[ColumnFilter]): PeriodicSeriesPlan = ???
+}
+
+/**
   * Concrete logical plan to query for data in a given range
   * with results in a regular time interval.
   *
