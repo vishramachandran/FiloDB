@@ -233,6 +233,7 @@ class SingleClusterPlanner(dsRef: DatasetRef,
   // scalastyle:on cyclomatic.complexity
 
 
+  // scalastyle:off line.size.limit
   private def materializeSubqueryWithWindowing(qContext: QueryContext, lp: SubQueryWithWindowing): PlanResult = {
 
     /**
@@ -262,7 +263,7 @@ class SingleClusterPlanner(dsRef: DatasetRef,
      *                - Execute Range Query <anotherNestedQueryReturningInstantVector> from start=S-3m-6m until end=E at step=30s i.e. GCD(30s,120s)
      *
      */
-
+    // scalastyle:on line.size.limit
     @tailrec def gcd(a: Long, b: Long): Long = if (b == 0) a else gcd(b, a % b)
     val innerQueryRange = TimeRange(lp.startMs - lp.subQueryWindowMs, lp.endMs)
     val innerQueryStepMs = gcd(lp.stepMs, lp.subQueryStepMs)

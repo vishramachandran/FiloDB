@@ -197,6 +197,13 @@ class SingleClusterPlannerSpec extends AnyFunSpec with Matchers with ScalaFuture
     }
   }
 
+  it("should generate correct plan for raw subqueries without any transformer") {
+    val lp = Parser.queryRangeToLogicalPlan("""foo{job="bar"}[3m:1m]""",
+      TimeStepParams(20900, 90, 21800))
+    val execPlan = engine.materialize(lp, QueryContext(origQueryParams = promQlQueryParams))
+    println(execPlan.printTree())
+  }
+
   it("should generate correct plan for subqueries with one child node for subquery") {
     val lp = Parser.queryRangeToLogicalPlan("""min_over_time(sum(rate(foo{job="bar"}[5m]))[3m:1m])""",
       TimeStepParams(20900, 90, 21800))
