@@ -7,7 +7,7 @@ import org.scalatest.BeforeAndAfterAll
 import filodb.core.{MachineMetricsData => MMD}
 import filodb.core.TestData
 import filodb.core.binaryrecord2.{RecordBuilder, RecordContainer, StringifyMapItemConsumer}
-import filodb.core.memstore.{TimeSeriesPartition, TimeSeriesPartitionSpec, TimeSeriesShardStats, WriteBufferPool}
+import filodb.core.memstore.{TimeSeries, TimeSeriesSpec, TimeSeriesShardStats, WriteBufferPool}
 import filodb.core.metadata._
 import filodb.core.metadata.Column.ColumnType._
 import filodb.core.query.RawDataRangeVector
@@ -37,7 +37,7 @@ class ShardDownsamplerSpec extends AnyFunSpec with Matchers with BeforeAndAfterA
       downsamplers = []
     }
   """))
-  val downsampleSchema = Schema(promSchema.partition, downsampleSchemaDS.get, None)
+  val downsampleSchema = Schema(promSchema.timeseries, downsampleSchemaDS.get, None)
 
   val customDataset = Dataset.make("custom2",
     Seq("name:string", "namespace:string", "instance:string"),
@@ -73,7 +73,7 @@ class ShardDownsamplerSpec extends AnyFunSpec with Matchers with BeforeAndAfterA
 
   // Creates a RawDataRangeVector using Prometheus time-value schema and a given chunk size etc.
   def timeValueRV(tuples: Seq[(Long, Double)]): RawDataRangeVector = {
-    val part = TimeSeriesPartitionSpec.makePart(0, promDataset, partKeyOffset, bufferPool = tsBufferPool)
+    val part = TimeSeriesSpec.makePart(0, promDataset, partKeyOffset, bufferPool = tsBufferPool)
     val readers = tuples.map { case (ts, d) => TupleRowReader((Some(ts), Some(d))) }
     readers.foreach { row => part.ingest(0, row, ingestBlockHolder, false, Option.empty, false) }
     // Now flush and ingest the rest to ensure two separate chunks
@@ -100,7 +100,7 @@ class ShardDownsamplerSpec extends AnyFunSpec with Matchers with BeforeAndAfterA
     val dsSchema = downsampleSchema.ingestionSchema
     val dsRecords = ShardDownsampler.newEmptyDownsampleRecords(Seq(5000, 10000), true)
 
-    downsampleOps.populateDownsampleRecords(rv.partition.asInstanceOf[TimeSeriesPartition], chunkInfos, dsRecords)
+    downsampleOps.populateDownsampleRecords(rv.partition.asInstanceOf[TimeSeries], chunkInfos, dsRecords)
 
     // with resolution 5000
     val downsampledData1 = dsRecords(0).builder.optimalContainerBytes().flatMap { con =>
@@ -113,8 +113,8 @@ class ShardDownsamplerSpec extends AnyFunSpec with Matchers with BeforeAndAfterA
         consumer.stringPairs.toMap shouldEqual Map("dc"->"dc1", "instance"->"instance1")
 
         // validate partition hash on the record
-        promDataset.partKeySchema.partitionHash(partKeyBase, partKeyOffset) shouldEqual
-          dsSchema.partitionHash(c.base, off)
+        promDataset.partKeySchema.tsHash(partKeyBase, partKeyOffset) shouldEqual
+          dsSchema.tsHash(c.base, off)
       }
 
       c.iterate(dsSchema).map {r =>
@@ -158,8 +158,8 @@ class ShardDownsamplerSpec extends AnyFunSpec with Matchers with BeforeAndAfterA
         consumer.stringPairs.toMap shouldEqual Map("dc"->"dc1", "instance"->"instance1")
 
         // validate partition hash on the record
-        promDataset.partKeySchema.partitionHash(partKeyBase, partKeyOffset) shouldEqual
-          dsSchema.partitionHash(c.base, off)
+        promDataset.partKeySchema.tsHash(partKeyBase, partKeyOffset) shouldEqual
+          dsSchema.tsHash(c.base, off)
       }
 
       c.iterate(dsSchema).map {r =>
@@ -214,7 +214,7 @@ class ShardDownsamplerSpec extends AnyFunSpec with Matchers with BeforeAndAfterA
     val dsSchema = histDSSchema.ingestionSchema
     val dsRecords = ShardDownsampler.newEmptyDownsampleRecords(Seq(60000), true)
 
-    downsampleOpsH.populateDownsampleRecords(rv.partition.asInstanceOf[TimeSeriesPartition], chunkInfos, dsRecords)
+    downsampleOpsH.populateDownsampleRecords(rv.partition.asInstanceOf[TimeSeries], chunkInfos, dsRecords)
 
     val downsampledData1 = dsRecords(0).builder.optimalContainerBytes().flatMap { con =>
       val c = RecordContainer(con)

@@ -4,7 +4,7 @@ import enumeratum.{Enum, EnumEntry}
 import spire.syntax.cfor._
 
 import filodb.core.metadata.DataSchema
-import filodb.core.store.{ChunkSetInfoReader, ReadablePartition}
+import filodb.core.store.{ChunkSetInfoReader, ReadableTimeSeries}
 import filodb.memory.format.PrimitiveVectorReader
 import filodb.memory.format.vectors.{CorrectingDoubleVectorReader, DoubleVectorDataReader}
 
@@ -46,7 +46,7 @@ trait DownsamplePeriodMarker {
     * @param startRow start row number (inclusive)
     * @param endRow end row number (inclusive)
     */
-  def periods(part: ReadablePartition,
+  def periods(part: ReadableTimeSeries,
               chunkset: ChunkSetInfoReader,
               resMillis: Long,
               startRow: Int,
@@ -59,13 +59,13 @@ trait DownsamplePeriodMarker {
   */
 class TimeDownsamplePeriodMarker(val inputColId: Int) extends DownsamplePeriodMarker {
   require(inputColId == DataSchema.timestampColID)
-  override def periods(part: ReadablePartition,
+  override def periods(part: ReadableTimeSeries,
                        chunkset: ChunkSetInfoReader,
                        resMillis: Long,
                        startRow: Int,
                        endRow: Int): debox.Set[Int] = {
     require(startRow <= endRow, s"startRow $startRow > endRow $endRow for " +
-      s"chunkset ${chunkset.debugString} partKey=${part.hexPartKey}")
+      s"chunkset ${chunkset.debugString} partKey=${part.hexTsKey}")
     val tsAcc = chunkset.vectorAccessor(DataSchema.timestampColID)
     val tsPtr = chunkset.vectorAddress(DataSchema.timestampColID)
     val tsReader = part.chunkReader(DataSchema.timestampColID, tsAcc, tsPtr).asLongReader
@@ -105,13 +105,13 @@ class TimeDownsamplePeriodMarker(val inputColId: Int) extends DownsamplePeriodMa
   */
 class CounterDownsamplePeriodMarker(val inputColId: Int) extends DownsamplePeriodMarker {
   override def name: PeriodMarkerName = PeriodMarkerName.Counter
-  override def periods(part: ReadablePartition,
+  override def periods(part: ReadableTimeSeries,
                        chunkset: ChunkSetInfoReader,
                        resMillis: Long,
                        startRow: Int,
                        endRow: Int): debox.Set[Int] = {
     require(startRow <= endRow, s"startRow $startRow > endRow $endRow for " +
-      s"chunkset ${chunkset.debugString} partKey=${part.hexPartKey}")
+      s"chunkset ${chunkset.debugString} partKey=${part.hexTsKey}")
     val result = debox.Set.empty[Int]
     result += startRow // need to add start of every chunk
     if (startRow < endRow) { // there is more than 1 row

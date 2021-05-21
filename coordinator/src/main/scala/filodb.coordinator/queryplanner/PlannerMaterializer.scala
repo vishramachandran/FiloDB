@@ -19,7 +19,7 @@ case class PlanResult(plans: Seq[ExecPlan], needsStitch: Boolean = false)
 
 trait  PlannerMaterializer {
     def schemas: Schemas
-    def dsOptions: DatasetOptions = schemas.part.options
+    def dsOptions: DatasetOptions = schemas.ts.options
 
     def materializeVectorPlan(qContext: QueryContext,
                               lp: VectorPlan): PlanResult = {
@@ -62,7 +62,7 @@ trait  PlannerMaterializer {
                                               lp: ApplyMiscellaneousFunction): PlanResult = {
       val vectors = walkLogicalPlanTree(lp.vectors, qContext)
       if (lp.function == MiscellaneousFunctionId.HistToPromVectors)
-        vectors.plans.foreach(_.addRangeVectorTransformer(HistToPromSeriesMapper(schemas.part)))
+        vectors.plans.foreach(_.addRangeVectorTransformer(HistToPromSeriesMapper(schemas.ts)))
       else
         vectors.plans.foreach(_.addRangeVectorTransformer(MiscellaneousFunctionMapper(lp.function, lp.stringArgs)))
       vectors

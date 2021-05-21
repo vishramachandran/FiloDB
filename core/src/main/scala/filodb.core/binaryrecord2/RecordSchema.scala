@@ -109,8 +109,8 @@ final class RecordSchema(val columns: Seq[ColumnInfo],
    * Retrieves the partition hash field from a BinaryRecord.  If partitionFieldStart is None, the results
    * of this will be undefined.
    */
-  def partitionHash(base: Any, offset: Long): Int = UnsafeUtils.getInt(base, offset + offsets.last)
-  def partitionHash(address: NativePointer): Int = UnsafeUtils.getInt(address + offsets.last)
+  def tsHash(base: Any, offset: Long): Int = UnsafeUtils.getInt(base, offset + offsets.last)
+  def tsHash(address: NativePointer): Int = UnsafeUtils.getInt(address + offsets.last)
 
   /**
    * Retrieves an Int from field # index.  No schema matching is done for speed - you must use this only when
@@ -235,7 +235,7 @@ final class RecordSchema(val columns: Seq[ColumnInfo],
                       val id = RecordSchema.schemaID(base, offset)
                       s"  schemaID: $id (${Schemas.global.schemaName(id)})\n"
                     }
-    val partHashStr = if (partitionFieldStart.isEmpty) "" else s"  partitionHash: ${partitionHash(base, offset)}\n"
+    val partHashStr = if (partitionFieldStart.isEmpty) "" else s"  partitionHash: ${tsHash(base, offset)}\n"
     val colDetails = columnTypes.zipWithIndex.map {
       case (IntColumn, i)    => f"  +${offsets(i)}%05d ${colNames(i)}%14s I ${getInt(base, offset, i)}"
       case (LongColumn, i)   => f"  +${offsets(i)}%05d ${colNames(i)}%14s L ${getLong(base, offset, i)}"

@@ -39,12 +39,12 @@ object Utils extends StrictLogging {
   def validatePartQuery(dataset: Dataset, shardMap: ShardMapper,
                         partQuery: PartitionQuery,
                         options: QueryContext, spreadProvider: SpreadProvider):
-  Seq[PartitionScanMethod] Or ErrorResponse =
+  Seq[TimeseriesScanMethod] Or ErrorResponse =
     Try(partQuery match {
       case SinglePartitionQuery(keyParts) =>
         val partKey = dataset.partKey(keyParts: _*)
         val shard = shardMap.partitionToShardNode(partKey.hashCode).shard
-        Seq(SinglePartitionScan(partKey, shard))
+        Seq(SingleTimeseriesScan(partKey, shard))
 
       case MultiPartitionQuery(keys) =>
         val partKeys = keys.map { k => dataset.partKey(k: _*) }
@@ -55,7 +55,7 @@ object Utils extends StrictLogging {
             if (emptyShard) logger.warn(s"Ignoring ${keys.length} keys from unassigned shard $shard")
             emptyShard
           }
-          .map { case (shard, keys) => MultiPartitionScan(keys, shard) }
+          .map { case (shard, keys) => MultiTimeseriesScan(keys, shard) }
 
       case FilteredPartitionQuery(filters) =>
         // get limited # of shards if shard key available, otherwise query all shards
@@ -73,7 +73,7 @@ object Utils extends StrictLogging {
           }
         }
         logger.debug(s"Translated filters $filters into shards $shards using spread")
-        shards.map { s => FilteredPartitionScan(ShardSplit(s), filters) }
+        shards.map { s => FilteredTimeseriesScan(ShardSplit(s), filters) }
     }).toOr.badMap {
       case m: MatchError => BadQuery(s"Could not parse $partQuery: ${m.getMessage}")
       case e: Exception => BadArgument(e.getMessage)
@@ -125,8 +125,8 @@ object Utils extends StrictLogging {
    * A variant of the above where one can pass in PartitionScanMethods and a function to convert to a message
    */
   def scatterGather[A](shardMap: ShardMapper,
-                       partMethods: Seq[PartitionScanMethod],
-                       parallelism: Int)(msgFunc: PartitionScanMethod => Any)
+                       partMethods: Seq[TimeseriesScanMethod],
+                       parallelism: Int)(msgFunc: TimeseriesScanMethod => Any)
                       (implicit t: Timeout, ec: ExecutionContext): Observable[A] = {
     val coordsAndMsgs = partMethods.map { method =>
       (shardMap.coordForShard(method.shard), msgFunc(method))

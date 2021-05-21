@@ -36,16 +36,16 @@ import filodb.memory.format.{ZeroCopyUTF8String => ZCUTF8}
  * something which makes a value unique within a partition and describes a range of data in a chunk.
  */
 final case class Dataset(name: String, schema: Schema) {
-  val options         = schema.partition.options
+  val options         = schema.timeseries.options
   val dataColumns     = schema.data.columns
-  val partitionColumns = schema.partition.columns
+  val partitionColumns = schema.timeseries.columns
 
   val ref = DatasetRef(name, None)
   val rowKeyColumns   = schema.data.columns take 1
 
   val ingestionSchema = schema.ingestionSchema
   val comparator      = schema.comparator
-  val partKeySchema   = schema.partKeySchema
+  val partKeySchema   = schema.tsKeySchema
 
   // Used for ChunkSetReader.binarySearchKeyChunks
   val rowKeyOrdering = CompositeReaderOrdering(rowKeyColumns.map(_.columnType.keyType))
@@ -279,7 +279,7 @@ object Dataset {
            dsSchema: Option[String] = None): Dataset Or BadSchema = {
     // Default value column is the last data column name
     val valueCol = valueColumn.getOrElse(dataColNameTypes.last.split(":").head)
-    for { partSchema <- PartitionSchema.make(partitionColNameTypes, options)
+    for { partSchema <- TimeSeriesSchema.make(partitionColNameTypes, options)
           dataSchema <- DataSchema.make(name, dataColNameTypes, downsamplerNames,
                                         downsamplePeriodMarker, valueCol, dsSchema) }
     yield { Dataset(name, Schema(partSchema, dataSchema, None)) }

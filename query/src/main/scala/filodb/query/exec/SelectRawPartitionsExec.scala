@@ -5,7 +5,7 @@ import monix.execution.Scheduler
 import monix.reactive.Observable
 
 import filodb.core.{DatasetRef, Types}
-import filodb.core.memstore.PartLookupResult
+import filodb.core.memstore.TsLookupResult
 import filodb.core.metadata.{Column, Schema, Schemas}
 import filodb.core.query.{QueryContext, QuerySession, ResultSchema}
 import filodb.core.store._
@@ -109,7 +109,7 @@ final case class SelectRawPartitionsExec(queryContext: QueryContext,
                                          dispatcher: PlanDispatcher,
                                          datasetRef: DatasetRef,
                                          dataSchema: Option[Schema],
-                                         lookupRes: Option[PartLookupResult],
+                                         lookupRes: Option[TsLookupResult],
                                          filterSchemas: Boolean,
                                          colIds: Seq[Types.ColumnId]) extends LeafExecPlan {
   def dataset: DatasetRef = datasetRef

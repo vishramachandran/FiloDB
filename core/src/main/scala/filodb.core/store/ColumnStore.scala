@@ -5,22 +5,22 @@ import com.typesafe.scalalogging.StrictLogging
 import filodb.core.query._
 import filodb.memory.BinaryRegionLarge
 
-sealed trait PartitionScanMethod {
+sealed trait TimeseriesScanMethod {
   def shard: Int
 }
 
-final case class SinglePartitionScan(partition: Array[Byte], shard: Int = 0) extends PartitionScanMethod
+final case class SingleTimeseriesScan(partition: Array[Byte], shard: Int = 0) extends TimeseriesScanMethod
 
-object SinglePartitionScan {
-  def apply(partKeyAddr: Long, shard: Int): SinglePartitionScan =
-    SinglePartitionScan(BinaryRegionLarge.asNewByteArray(partKeyAddr), shard)
+object SingleTimeseriesScan {
+  def apply(partKeyAddr: Long, shard: Int): SingleTimeseriesScan =
+    SingleTimeseriesScan(BinaryRegionLarge.asNewByteArray(partKeyAddr), shard)
 }
 
-final case class MultiPartitionScan(partitions: Seq[Array[Byte]],
-                                    shard: Int = 0) extends PartitionScanMethod
+final case class MultiTimeseriesScan(partitions: Seq[Array[Byte]],
+                                     shard: Int = 0) extends TimeseriesScanMethod
 // NOTE: One ColumnFilter per column please.
-final case class FilteredPartitionScan(split: ScanSplit,
-                                       filters: Seq[ColumnFilter] = Nil) extends PartitionScanMethod {
+final case class FilteredTimeseriesScan(split: ScanSplit,
+                                        filters: Seq[ColumnFilter] = Nil) extends TimeseriesScanMethod {
   def shard: Int = split match {
     case ShardSplit(shard) => shard
     case other: ScanSplit  => ???

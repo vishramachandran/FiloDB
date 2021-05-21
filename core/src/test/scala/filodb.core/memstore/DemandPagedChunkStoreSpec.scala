@@ -27,7 +27,7 @@ class DemandPagedChunkStoreSpec extends AnyFunSpec with AsyncTest {
                                 .withFallback(TestData.sourceConf.getConfig("store"))
 
   memStore.setup(dataset1.ref, Schemas(schema1), 0, StoreConfig(sourceConf))
-  val onDemandPartMaker = memStore.getShardE(dataset1.ref, 0).partitionMaker
+  val onDemandPartMaker = memStore.getShardE(dataset1.ref, 0).odpChunkStore
 
   after {
     memStore.reset()

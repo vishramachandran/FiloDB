@@ -5,14 +5,14 @@ import spire.syntax.cfor._
 
 import filodb.core.DatasetRef
 import filodb.core.Types._
-import filodb.core.metadata.{Column, PartitionSchema, Schema}
+import filodb.core.metadata.{Column, Schema, TimeSeriesSchema}
 import filodb.core.store._
 import filodb.memory.{BinaryRegion, BinaryRegionLarge, BlockMemFactory, NativeMemoryManager}
 import filodb.memory.data.{ChunkMap, Shutdown}
 import filodb.memory.format._
 import filodb.memory.format.MemoryReader._
 
-object TimeSeriesPartition extends StrictLogging {
+object TimeSeries extends StrictLogging {
   type AppenderArray = Array[BinaryAppendableVector[_]]
 
   val nullChunks    = UnsafeUtils.ZeroPointer.asInstanceOf[AppenderArray]
@@ -21,8 +21,8 @@ object TimeSeriesPartition extends StrictLogging {
   // Use global logger so we can save a few fields for each of millions of TSPartitions  :)
   val _log = logger
 
-  def partKeyString(schema: PartitionSchema, partKeyBase: Any, partKeyOffset: Long): String = {
-    schema.binSchema.stringify(partKeyBase, partKeyOffset)
+  def tsKeyString(schema: TimeSeriesSchema, tsKeyBase: Any, tsKeyOffset: Long): String = {
+    schema.binSchema.stringify(tsKeyBase, tsKeyOffset)
   }
 
   val publishIntervalTag = "_step_"
@@ -33,10 +33,10 @@ object TimeSeriesPartition extends StrictLogging {
 
 // Temporary holder of chunk metadata pointer and appenders array before optimize/finalize step
 // In all cases should exist only until the next flush cycle
-final case class InfoAppenders(info: ChunkSetInfo, appenders: TimeSeriesPartition.AppenderArray)
+final case class InfoAppenders(info: ChunkSetInfo, appenders: TimeSeries.AppenderArray)
 
 /**
- * A MemStore Partition holding chunks of data for different columns (a schema) for time series use cases.
+ * A MemStore TimeSeries holding chunks of data for different columns (a schema) for time series use cases.
  *
  * This implies:
  * - New data is assumed to mostly be increasing in time
@@ -54,47 +54,47 @@ final case class InfoAppenders(info: ChunkSetInfo, appenders: TimeSeriesPartitio
  *
  * The main data structure used is inherited from ChunkMap, an efficient, offheap sorted map.
  * Note that other than the variables used in this class, there is NO JVM-managed memory used
- * for managing chunks.  Thus the amount of JVM-managed memory used for a partition is constant
- * regardless of the number of chunks in a TSPartition. The partition key and infoMap are both
+ * for managing chunks.  Thus the amount of JVM-managed memory used for a timeseries is constant
+ * regardless of the number of chunks in a TimeSeries. The timeseries key and infoMap are both
  * in offheap write buffers, and chunks and chunk metadata are kept in offheap block memory.
  *
  * Note: Inheritance is chosen over composition to avoid an extra object allocation, which
  * speeds up GC and reduces memory overhead a bit.
  */
-class TimeSeriesPartition(val partID: Int,
-                          val schema: Schema,
-                          partitionKey: BinaryRegion.NativePointer,
-                          val shard: Int,
-                          bufferPool: WriteBufferPool,
-                          val shardStats: TimeSeriesShardStats,
-                          memFactory: NativeMemoryManager,
-                          initMapSize: Int)
-extends ChunkMap(memFactory, initMapSize) with ReadablePartition {
-  import TimeSeriesPartition._
+class TimeSeries(val tsId: Int,
+                 val schema: Schema,
+                 tsKey: BinaryRegion.NativePointer,
+                 val shard: Int,
+                 bufferPool: WriteBufferPool,
+                 val shardStats: TimeSeriesShardStats,
+                 memFactory: NativeMemoryManager,
+                 initMapSize: Int)
+extends ChunkMap(memFactory, initMapSize) with ReadableTimeSeries {
+  import TimeSeries._
 
   // Really important that buffer pool schema matches
   require(bufferPool.schema == schema.data,
-    s"BufferPool schema was ${bufferPool.schema} but partition schema was ${schema.data}")
+    s"BufferPool schema was ${bufferPool.schema} but time series schema was ${schema.data}")
 
-  def partKeyBase: Array[Byte] = UnsafeUtils.ZeroPointer.asInstanceOf[Array[Byte]]
-  def partKeyOffset: Long = partitionKey
+  def tsKeyBase: Array[Byte] = UnsafeUtils.ZeroPointer.asInstanceOf[Array[Byte]]
+  def tsKeyOffset: Long = tsKey
 
   def publishInterval: Option[Long] = {
-    publishIntervalFinder.findPublishIntervalMs(schema.partition.hash, UnsafeUtils.ZeroArray, partitionKey)
+    publishIntervalFinder.findPublishIntervalMs(schema.timeseries.hash, UnsafeUtils.ZeroArray, tsKey)
   }
   /**
     * Incoming, unencoded data gets appended to these BinaryAppendableVectors.
     * There is one element for each column of the schema. All of them have the same chunkId.
     * Var mutates when buffers are switched for optimization back to NULL, until new data arrives.
-    * in [[filodb.core.memstore.TimeSeriesPartition#switchBuffers]],
-    * and new chunk is added to the partition.
+    * in [[filodb.core.memstore.TimeSeries#switchBuffers]],
+    * and new chunk is added to the timeseries.
     * Note that if this is not NULL, then it is always the most recent element of infoMap.
     */
   protected var currentChunks = nullChunks
   protected var currentInfo = nullInfo
 
   /**
-    * True if partition is actively ingesting.
+    * True if timeseries is actively ingesting.
     * This flag is maintained in addition to the activelyIngesting bitmap maintained in
     * TimeSeriesShard because this flag is checked for each sample and bitmap.get is not fast.
     */
@@ -204,7 +204,7 @@ extends ChunkMap(memFactory, initMapSize) with ReadablePartition {
         acceptDuplicateSamples, maxChunkTime)
     } else {
       _log.warn("EMPTY WRITEBUFFERS when switchBuffers called!  Likely a severe bug!!! " +
-        s"Part=$stringPartition userTime=$userTime numRows=${currentInfo.numRows}")
+        s"timeseries=$stringTsKey userTime=$userTime numRows=${currentInfo.numRows}")
     }
   }
 
@@ -224,7 +224,7 @@ extends ChunkMap(memFactory, initMapSize) with ReadablePartition {
 
   /**
    * Atomically switches the writeBuffers to a null one.  If and when we get more data, then
-   * we will initialize the writeBuffers to new ones.  This way dead partitions not getting more data will not
+   * we will initialize the writeBuffers to new ones.  This way dead timeseries not getting more data will not
    * waste empty appenders.
    * Also populates a complete ChunkSetInfo so that these chunks may be queried reliably.
    * To guarantee no more writes happen when switchBuffers is called, have ingest() and switchBuffers() be
@@ -274,11 +274,11 @@ extends ChunkMap(memFactory, initMapSize) with ReadablePartition {
       }
       shardStats.numSamplesEncoded.increment(info.numRows)
       // Now, write metadata into offheap block metadata space and update infosChunks
-      val metaAddr = blockHolder.endMetaSpan(TimeSeriesShard.writeMeta(_, partID, info, frozenVectors),
+      val metaAddr = blockHolder.endMetaSpan(TimeSeriesShard.writeMeta(_, tsId, info, frozenVectors),
         schema.data.blockMetaSize.toShort)
 
       val newInfo = ChunkSetInfo(metaAddr + 4)
-      _log.trace(s"Adding new chunk ${newInfo.debugString} to part $stringPartition")
+      _log.trace(s"Adding new chunk ${newInfo.debugString} to timeseries $stringTsKey")
       infoPut(newInfo)
 
       // release older write buffers back to pool.  Nothing at this point should reference the older appenders.
@@ -296,7 +296,7 @@ extends ChunkMap(memFactory, initMapSize) with ReadablePartition {
    * flushingChunks when this method is called.  If this is not true, then a retry loop is needed to guarantee
    * that nothing changes from underneath optimize().
    *
-   * TODO: for partitions getting very little data, in the future, instead of creating a new set of chunks,
+   * TODO: for timeseries getting very little data, in the future, instead of creating a new set of chunks,
    * we might wish to flush current chunks as they are for persistence but then keep adding to the partially
    * filled currentChunks.  That involves much more state, so do much later.
    */
@@ -305,8 +305,8 @@ extends ChunkMap(memFactory, initMapSize) with ReadablePartition {
     encodeAndReleaseBuffers(blockHolder)
     infosToBeFlushed
       .map { info =>
-        _log.trace(s"Preparing to flush chunk ${info.debugString} of part $stringPartition")
-        ChunkSet(info, partitionKey, Nil,
+        _log.trace(s"Preparing to flush chunk ${info.debugString} of timeseries $stringTsKey")
+        ChunkSet(info, tsKey, Nil,
                  (0 until schema.numDataColumns).map { i => BinaryVector.asBuffer(info.vectorPtr(i)) },
                  // Updates the newestFlushedID when the flush succeeds.
                  info => updateFlushedID(info))
@@ -398,7 +398,7 @@ extends ChunkMap(memFactory, initMapSize) with ReadablePartition {
     final def unlock(): Unit = chunkmapReleaseShared()
   }
 
-  def partKeyHash: Int = schema.partKeySchema.partitionHash(partKeyBase, partKeyOffset)
+  def tsKeyHash: Int = schema.tsKeySchema.tsHash(tsKeyBase, tsKeyOffset)
 
   /**
     * startTime of earliest chunk in memory.
@@ -467,18 +467,18 @@ extends ChunkMap(memFactory, initMapSize) with ReadablePartition {
     chunkmapWithExclusive(chunkmapDoPut(info.infoAddr, newestFlushedID))
   }
 
-  // Free memory (esp offheap) attached to this TSPartition and return buffers to common pool
+  // Free memory (esp offheap) attached to this TimeSeries and return buffers to common pool
   def shutdown(): Unit = {
     chunkmapFree()
   }
 
   override protected def finalize(): Unit = {
-    memFactory.freeMemory(partKeyOffset)
+    memFactory.freeMemory(tsKeyOffset)
     if (currentInfo != nullInfo) bufferPool.release(currentInfo.infoAddr, currentChunks)
   }
 
   override def toString: String = {
-    s"TimeSeriesPartition(shard=$shard,partId=$partID){$stringPartition}"
+    s"TimeSeries(shard=$shard,tsId=$tsId){$stringTsKey}"
   }
 }
 
@@ -488,29 +488,29 @@ extends ChunkMap(memFactory, initMapSize) with ReadablePartition {
  *
  * NOTE(velvia): The reason why I used inheritance was not so much memory but just ease of implementation.
  * With composition we'd need to add in tons of methods and clutter things up quite a bit. If it simply
- * implemented ReadablePartition that might break things in a bunch of places.
+ * implemented ReadableTimeSeries that might break things in a bunch of places.
  * So best way to keep changes small and balance out different needs
  */
-class TracingTimeSeriesPartition(partID: Int,
-                                 ref: DatasetRef,
-                                 schema: Schema,
-                                 partitionKey: BinaryRegion.NativePointer,
-                                 shard: Int,
-                                 bufferPool: WriteBufferPool,
-                                 shardStats: TimeSeriesShardStats,
-                                 memFactory: NativeMemoryManager,
-                                 initMapSize: Int) extends
-TimeSeriesPartition(partID, schema, partitionKey, shard, bufferPool, shardStats, memFactory, initMapSize) {
-  import TimeSeriesPartition._
+class TracingTimeSeries(tsId: Int,
+                        ref: DatasetRef,
+                        schema: Schema,
+                        tsKey: BinaryRegion.NativePointer,
+                        shard: Int,
+                        bufferPool: WriteBufferPool,
+                        shardStats: TimeSeriesShardStats,
+                        memFactory: NativeMemoryManager,
+                        initMapSize: Int) extends
+TimeSeries(tsId, schema, tsKey, shard, bufferPool, shardStats, memFactory, initMapSize) {
+  import TimeSeries._
 
-  _log.info(s"Creating TracingTimeSeriesPartition dataset=$ref schema=${schema.name} partId=$partID $stringPartition")
+  _log.info(s"Creating TracingTimeSeries dataset=$ref schema=${schema.name} tsId=$tsId $stringTsKey")
 
   override def ingest(ingestionTime: Long, row: RowReader, overflowBlockHolder: BlockMemFactory,
                       createChunkAtFlushBoundary: Boolean, flushIntervalMillis: Option[Long],
                       acceptDuplicateSamples: Boolean,
                       maxChunkTime: Long = Long.MaxValue): Unit = {
     val ts = row.getLong(0)
-    _log.info(s"Ingesting dataset=$ref schema=${schema.name} shard=$shard partId=$partID $stringPartition " +
+    _log.info(s"Ingesting dataset=$ref schema=${schema.name} shard=$shard tsId=$tsId $stringTsKey " +
                s"ingestionTime=$ingestionTime ts=$ts " +
                (1 until schema.numDataColumns).map(row.getAny).mkString("[", ",", "]"))
     super.ingest(ingestionTime, row, overflowBlockHolder, createChunkAtFlushBoundary, flushIntervalMillis,
@@ -518,11 +518,11 @@ TimeSeriesPartition(partID, schema, partitionKey, shard, bufferPool, shardStats,
   }
 
   override def switchBuffers(blockHolder: BlockMemFactory, encode: Boolean = false): Boolean = {
-    _log.info(s"SwitchBuffers dataset=$ref schema=${schema.name} shard=$shard partId=$partID $stringPartition - " +
+    _log.info(s"SwitchBuffers dataset=$ref schema=${schema.name} shard=$shard tsId=$tsId $stringTsKey - " +
                s"encode=$encode for currentChunk ${currentInfo.debugString}")
     val ret = super.switchBuffers(blockHolder, encode)
-    _log.info(s"After SwitchBuffers dataset=$ref schema=${schema.name} shard=$shard partId=$partID " +
-      s"$stringPartition - encode=$encode for currentChunk ${currentInfo.debugString} " +
+    _log.info(s"After SwitchBuffers dataset=$ref schema=${schema.name} shard=$shard tsId=$tsId " +
+      s"$stringTsKey - encode=$encode for currentChunk ${currentInfo.debugString} " +
       s"chunkIds_in_chunkmap=${infos(AllChunkScan).map(_.debugString).mkString(",")}")
     ret
   }
@@ -530,43 +530,43 @@ TimeSeriesPartition(partID, schema, partitionKey, shard, bufferPool, shardStats,
   override def infosToBeFlushed: ChunkInfoIterator = {
     super.infosToBeFlushed.filter { info =>
       _log.info(s"infosToBeFlushed returned ${info.debugString} dataset=$ref schema=${schema.name} shard=$shard " +
-        s"partId=$partID $stringPartition")
+        s"tsId=$tsId $stringTsKey")
       true
     }
   }
 
   override protected def initNewChunk(startTime: Long, ingestionTime: Long): Unit = {
-    _log.info(s"dataset=$ref schema=${schema.name} shard=$shard partId=$partID $stringPartition - " +
+    _log.info(s"dataset=$ref schema=${schema.name} shard=$shard tsId=$tsId $stringTsKey - " +
                s"initNewChunk($startTime, $ingestionTime)")
     super.initNewChunk(startTime, ingestionTime)
-    _log.info(s"dataset=$ref schema=${schema.name} shard=$shard partId=$partID $stringPartition - " +
+    _log.info(s"dataset=$ref schema=${schema.name} shard=$shard tsId=$tsId $stringTsKey - " +
                s"newly created ChunkInfo ${currentInfo.debugString}")
   }
 
   /*override def chunkmapAcquireShared(): Unit = {
     super.chunkmapAcquireShared()
-    _log.info(s"SHARED LOCK ACQUIRED for shard=$shard partId=$partID $stringPartition", new RuntimeException)
+    _log.info(s"SHARED LOCK ACQUIRED for shard=$shard tsId=$tsId $stringTsKey", new RuntimeException)
   }
 
   override def chunkmapReleaseShared(): Unit = {
     super.chunkmapReleaseShared()
-    _log.info(s"SHARED LOCK RELEASED for shard=$shard partId=$partID $stringPartition", new RuntimeException)
+    _log.info(s"SHARED LOCK RELEASED for shard=$shard tsId=$tsId $stringTsKey", new RuntimeException)
   }
 
   override def chunkmapAcquireExclusive(): Unit = {
     super.chunkmapAcquireExclusive()
-    _log.info(s"EXCLUSIVE LOCK ACQUIRED for shard=$shard partId=$partID $stringPartition", new RuntimeException)
+    _log.info(s"EXCLUSIVE LOCK ACQUIRED for shard=$shard tsId=$tsId $stringTsKey", new RuntimeException)
   }
 
   override def chunkmapReleaseExclusive(): Unit = {
     super.chunkmapReleaseExclusive()
-    _log.info(s"EXCLUSIVE LOCK RELEASED for shard=$shard partId=$partID $stringPartition", new RuntimeException)
+    _log.info(s"EXCLUSIVE LOCK RELEASED for shard=$shard tsId=$tsId $stringTsKey", new RuntimeException)
   }*/
 
 }
 
-final case class PartKeyRowReader(records: Iterator[PartKeyWithTimes]) extends Iterator[RowReader] {
-  var currVal: PartKeyWithTimes = _
+final case class TsKeyRowReader(records: Iterator[TsKeyWithTimes]) extends Iterator[RowReader] {
+  var currVal: TsKeyWithTimes = _
 
   private val rowReader = new RowReader {
     def notNull(columnNo: Int): Boolean = true

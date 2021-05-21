@@ -11,7 +11,7 @@ import org.joda.time.DateTime
 
 import filodb.core.Types.{PartitionKey, UTF8Map}
 import filodb.core.binaryrecord2.RecordBuilder
-import filodb.core.memstore.{SomeData, TimeSeriesPartitionSpec, WriteBufferPool}
+import filodb.core.memstore.{SomeData, TimeSeriesSpec, WriteBufferPool}
 import filodb.core.metadata.{Dataset, DatasetOptions, Schema, Schemas}
 import filodb.core.metadata.Column.ColumnType
 import filodb.core.query.{RangeVector, RangeVectorCursor, RangeVectorKey, RawDataRangeVector, RvRange, TransientRow}
@@ -377,7 +377,7 @@ object MachineMetricsData {
   }
 
   // dataset2 + histDataset
-  val schemas2h = Schemas(schema2.partition,
+  val schemas2h = Schemas(schema2.timeseries,
                         Map(schema2.name -> schema2, "histogram" -> histDataset.schema))
 
   val histMaxDS = Dataset("histmax", Seq("metric:string", "tags:map"),
@@ -412,7 +412,7 @@ object MachineMetricsData {
   (Stream[Seq[Any]], RawDataRangeVector) = {
     val histData = linearHistSeries(startTS, 1, pubFreq.toInt, numBuckets, infBucket).take(numSamples)
     val container = records(ds, histData).records
-    val part = TimeSeriesPartitionSpec.makePart(0, ds, partKey=histPartKey, bufferPool=pool)
+    val part = TimeSeriesSpec.makePart(0, ds, partKey=histPartKey, bufferPool=pool)
     container.iterate(ds.ingestionSchema).foreach { row => part.ingest(0, row, histIngestBH,
       false, Option.empty, false, 1.hour.toMillis) }
     // Now flush and ingest the rest to ensure two separate chunks
@@ -427,7 +427,7 @@ object MachineMetricsData {
   (Stream[Seq[Any]], RawDataRangeVector) = {
     val histData = histMax(linearHistSeries(startTS, 1, pubFreq.toInt, numBuckets)).take(numSamples)
     val container = records(histMaxDS, histData).records
-    val part = TimeSeriesPartitionSpec.makePart(0, histMaxDS, partKey=histPartKey, bufferPool=histMaxBP)
+    val part = TimeSeriesSpec.makePart(0, histMaxDS, partKey=histPartKey, bufferPool=histMaxBP)
     container.iterate(histMaxDS.ingestionSchema).foreach { row => part.ingest(0, row, histMaxBH, false,
       Option.empty, false, 1.hour.toMillis) }
     // Now flush and ingest the rest to ensure two separate chunks

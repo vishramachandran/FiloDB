@@ -162,7 +162,7 @@ class SingleClusterPlannerSpec extends AnyFunSpec with Matchers with ScalaFuture
   it("should rename Prom __name__ filters if dataset has different metric column") {
     // Custom SingleClusterPlanner with different dataset with different metric name
     val datasetOpts = dataset.options.copy(metricColumn = "kpi", shardKeyColumns = Seq("kpi", "job"))
-    val dataset2 = dataset.modify(_.schema.partition.options).setTo(datasetOpts)
+    val dataset2 = dataset.modify(_.schema.timeseries.options).setTo(datasetOpts)
     val engine2 = new SingleClusterPlanner(dataset2.ref, Schemas(dataset2.schema), mapperRef,
       0, queryConfig, "raw")
 

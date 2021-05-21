@@ -23,7 +23,7 @@ import filodb.memory.format.{UnsafeUtils, ZeroCopyUTF8String}
 class TimeSeriesMemStore(filodbConfig: Config,
                          val store: ColumnStore,
                          val metastore: MetaStore,
-                         evictionPolicy: Option[PartitionEvictionPolicy] = None)
+                         evictionPolicy: Option[TimeSeriesEvictionPolicy] = None)
                         (implicit val ioPool: ExecutionContext)
 extends MemStore with StrictLogging {
   import collection.JavaConverters._
@@ -53,7 +53,7 @@ extends MemStore with StrictLogging {
             downsample: DownsampleConfig = DownsampleConfig.disabled): Unit = synchronized {
     val shards = datasets.getOrElseUpdate(ref, new NonBlockingHashMapLong[TimeSeriesShard](32, false))
     val quotaSource = quotaSources.getOrElseUpdate(ref,
-      new ConfigQuotaSource(filodbConfig, schemas.part.options.shardKeyColumns.length))
+      new ConfigQuotaSource(filodbConfig, schemas.ts.options.shardKeyColumns.length))
     if (shards.containsKey(shard)) {
       throw ShardAlreadySetup(ref, shard)
     } else {
@@ -209,13 +209,13 @@ extends MemStore with StrictLogging {
     getShard(dataset, shard).map(_.numActivePartitions).getOrElse(-1)
 
   def readRawPartitions(ref: DatasetRef, maxChunkTime: Long,
-                        partMethod: PartitionScanMethod,
+                        tsMethod: TimeseriesScanMethod,
                         chunkMethod: ChunkScanMethod = AllChunkScan): Observable[RawPartData] = Observable.empty
 
   def scanPartitions(ref: DatasetRef,
-                     iter: PartLookupResult,
+                     iter: TsLookupResult,
                      colIds: Seq[Types.ColumnId],
-                     querySession: QuerySession): Observable[ReadablePartition] = {
+                     querySession: QuerySession): Observable[ReadableTimeSeries] = {
     val shard = datasets(ref).get(iter.shard)
 
     if (shard == UnsafeUtils.ZeroPointer) {
@@ -226,16 +226,16 @@ extends MemStore with StrictLogging {
   }
 
   def lookupPartitions(ref: DatasetRef,
-                       partMethod: PartitionScanMethod,
+                       partMethod: TimeseriesScanMethod,
                        chunkMethod: ChunkScanMethod,
-                       querySession: QuerySession): PartLookupResult = {
+                       querySession: QuerySession): TsLookupResult = {
     val shard = datasets(ref).get(partMethod.shard)
 
     if (shard == UnsafeUtils.ZeroPointer) {
       throw new IllegalArgumentException(s"Shard ${partMethod.shard} of dataset $ref is not assigned to " +
         s"this node. Was it was recently reassigned to another node? Prolonged occurrence indicates an issue.")
     }
-    shard.lookupPartitions(partMethod, chunkMethod, querySession)
+    shard.lookupTimeSeries(partMethod, chunkMethod, querySession)
   }
 
   def numRowsIngested(dataset: DatasetRef, shard: Int): Long =

@@ -34,7 +34,7 @@ object WriteBufferPool {
 class WriteBufferPool(memFactory: NativeMemoryManager,
                       val schema: DataSchema,
                       storeConf: StoreConfig) extends StrictLogging {
-  import TimeSeriesPartition._
+  import TimeSeries._
   import WriteBufferPool._
 
   val queue = new MpscUnboundedArrayQueue[(NativePointer, AppenderArray)](storeConf.maxBufferPoolSize)

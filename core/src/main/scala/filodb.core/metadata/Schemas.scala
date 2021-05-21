@@ -9,7 +9,7 @@ import filodb.core.GlobalConfig
 import filodb.core.Types._
 import filodb.core.binaryrecord2._
 import filodb.core.downsample.{ChunkDownsampler, DownsamplePeriodMarker}
-import filodb.core.memstore.PartKeyLuceneIndexRecord
+import filodb.core.memstore.TsKeyLuceneIndexRecord
 import filodb.core.metadata.Column.ColumnType
 import filodb.core.query.ColumnInfo
 import filodb.core.store.{ChunkScanMethod, ChunkSetInfo}
@@ -55,9 +55,9 @@ final case class DataSchema private(name: String,
  * for time series during querying.
  * There should only be ONE PartitionSchema across the entire Database.
  */
-final case class PartitionSchema(columns: Seq[Column],
-                                 predefinedKeys: Seq[String],
-                                 options: DatasetOptions) {
+final case class TimeSeriesSchema(columns: Seq[Column],
+                                  predefinedKeys: Seq[String],
+                                  options: DatasetOptions) {
   val binSchema = new RecordSchema(columns.map(c => ColumnInfo(c.name, c.columnType)), Some(0), predefinedKeys)
   val hash = Schemas.genHash(columns)
 }
@@ -122,7 +122,7 @@ object DataSchema {
          conf.as[Option[String]]("downsample-schema"))
 }
 
-object PartitionSchema {
+object TimeSeriesSchema {
   import Dataset._
 
   /**
@@ -134,12 +134,12 @@ object PartitionSchema {
    */
   def make(partColNameTypes: Seq[String],
            options: DatasetOptions,
-           predefinedKeys: Seq[String] = Seq.empty): PartitionSchema Or BadSchema = {
+           predefinedKeys: Seq[String] = Seq.empty): TimeSeriesSchema Or BadSchema = {
 
     for { partColumns  <- Column.makeColumnsFromNameTypeList(partColNameTypes, PartColStartIndex)
          _             <- validateMapColumn(partColumns, Nil) }
     yield {
-      PartitionSchema(partColumns, predefinedKeys, options)
+      TimeSeriesSchema(partColumns, predefinedKeys, options)
     }
   }
 
@@ -153,7 +153,7 @@ object PartitionSchema {
    *   }
    * }}}
    */
-  def fromConfig(partConfig: Config): PartitionSchema Or BadSchema =
+  def fromConfig(partConfig: Config): TimeSeriesSchema Or BadSchema =
     make(partConfig.as[Seq[String]]("columns"),
          DatasetOptions.fromConfig(partConfig.getConfig("options")),
          partConfig.as[Option[Seq[String]]]("predefined-keys").getOrElse(Nil))
@@ -167,22 +167,22 @@ object PartitionSchema {
  *
  * Important Note: Serialization will be tricky since there may be loops in object graph. Avoid if possible.
  */
-final case class Schema(partition: PartitionSchema, data: DataSchema, var downsample: Option[Schema] = None) {
-  val allColumns = data.columns ++ partition.columns
+final case class Schema(timeseries: TimeSeriesSchema, data: DataSchema, var downsample: Option[Schema] = None) {
+  val allColumns = data.columns ++ timeseries.columns
   val ingestionSchema = new RecordSchema(allColumns.map(c => ColumnInfo(c.name, c.columnType)),
                                          Some(data.columns.length),
-                                         partition.predefinedKeys)
+                                         timeseries.predefinedKeys)
 
   val comparator      = new RecordComparator(ingestionSchema)
-  val partKeySchema   = comparator.partitionKeySchema
-  val options         = partition.options
+  val tsKeySchema   = comparator.partitionKeySchema
+  val options         = timeseries.options
 
   val numDataColumns  = data.columns.length
-  val partitionInfos  = partition.columns.map(ColumnInfo.apply)
+  val partitionInfos  = timeseries.columns.map(ColumnInfo.apply)
   val dataInfos       = data.columns.map(ColumnInfo.apply)
 
   // A unique hash of the partition and data schemas together. Use for BinaryRecords etc.
-  val schemaHash      = (partition.hash + 31 * data.hash) & 0x0ffff
+  val schemaHash      = (timeseries.hash + 31 * data.hash) & 0x0ffff
 
   def name: String = data.name
 
@@ -199,11 +199,11 @@ final case class Schema(partition: PartitionSchema, data: DataSchema, var downsa
    */
   def partColIterator(columnID: Int, base: Any, offset: Long): TypedIterator = {
     val partColPos = columnID - Dataset.PartColStartIndex
-    require(Dataset.isPartitionID(columnID) && partColPos < partition.columns.length)
-    partition.columns(partColPos).columnType match {
-      case StringColumn => new PartKeyUTF8Iterator(partKeySchema, base, offset, partColPos)
-      case LongColumn   => new PartKeyLongIterator(partKeySchema, base, offset, partColPos)
-      case TimestampColumn => new PartKeyLongIterator(partKeySchema, base, offset, partColPos)
+    require(Dataset.isPartitionID(columnID) && partColPos < timeseries.columns.length)
+    timeseries.columns(partColPos).columnType match {
+      case StringColumn => new PartKeyUTF8Iterator(tsKeySchema, base, offset, partColPos)
+      case LongColumn   => new PartKeyLongIterator(tsKeySchema, base, offset, partColPos)
+      case TimestampColumn => new PartKeyLongIterator(tsKeySchema, base, offset, partColPos)
       case other: Column.ColumnType => ???
     }
   }
@@ -221,7 +221,7 @@ final case class Schema(partition: PartitionSchema, data: DataSchema, var downsa
    * the input RowReader columns whose names are passed in.
    */
   def ingestRouting(colNames: Seq[String]): Array[Int] =
-    dataRouting(colNames) ++ partition.columns.map { c => colNames.indexOf(c.name) }
+    dataRouting(colNames) ++ timeseries.columns.map { c => colNames.indexOf(c.name) }
 
   /**
    * Extracts a timestamp out of a RowReader, assuming data columns are first (ingestion order)
@@ -235,13 +235,13 @@ final case class Schema(partition: PartitionSchema, data: DataSchema, var downsa
    */
   def colIDs(colNames: String*): Seq[Int] Or Seq[String] =
     colNames.map { n => data.columns.find(_.name == n).map(_.id)
-                          .orElse { partition.columns.find(_.name == n).map(_.id) }
+                          .orElse { timeseries.columns.find(_.name == n).map(_.id) }
                           .toOr(One(n)) }
             .combined.badMap(_.toSeq)
 
   /** Returns the Column instance given the ID */
   def columnFromID(columnID: Int): Column =
-    if (Dataset.isPartitionID(columnID)) { partition.columns(columnID - Dataset.PartColStartIndex) }
+    if (Dataset.isPartitionID(columnID)) { timeseries.columns(columnID - Dataset.PartColStartIndex) }
     else                                 { data.columns(columnID) }
 
   /** Returns ColumnInfos from a set of column IDs.  Throws exception if ID is invalid */
@@ -249,13 +249,13 @@ final case class Schema(partition: PartitionSchema, data: DataSchema, var downsa
     ids.map(columnFromID).map { c => ColumnInfo(c.name, c.columnType) }
 
   override final def toString: String = {
-    s"Schema(partition=$partition, data=$data, downsample=${downsample.map(_.name)})"
+    s"Schema(partition=$timeseries, data=$data, downsample=${downsample.map(_.name)})"
     // overriden since serializing downsample schema may result in infinite loop
   }
 
 }
 
-final case class Schemas(part: PartitionSchema,
+final case class Schemas(ts: TimeSeriesSchema,
                          schemas: Map[String, Schema]) {
   // A very fast array of the schemas by schemaID.  Since schemaID=16 bits, we just use a single 64K element array
   // for super fast lookup.  Schemas object should really be a singleton anyways.
@@ -320,7 +320,7 @@ final case class Schemas(part: PartitionSchema,
     * time series churn much better
     */
   def ensureQueriedDataSizeWithinLimit(schemaId: Int,
-                                       pkRecs: Seq[PartKeyLuceneIndexRecord],
+                                       pkRecs: Seq[TsKeyLuceneIndexRecord],
                                        chunkDurationMillis: Long,
                                        resolutionMs: Long,
                                        chunkMethod: ChunkScanMethod,
@@ -383,7 +383,7 @@ object Schemas extends StrictLogging {
   val UnknownSchema = UnsafeUtils.ZeroPointer.asInstanceOf[Schema]
 
   // Easy way to create Schemas from a single Schema, mostly useful for testing
-  def apply(sch: Schema): Schemas = Schemas(sch.partition, Map(sch.data.name -> sch))
+  def apply(sch: Schema): Schemas = Schemas(sch.timeseries, Map(sch.data.name -> sch))
 
   /**
    * Generates a unique 16-bit hash from the column names, types, params.  Sensitive to order.
@@ -432,7 +432,7 @@ object Schemas extends StrictLogging {
   def fromConfig(config: Config): Schemas Or Seq[(String, BadSchema)] = {
     val schemas = new collection.mutable.HashMap[String, Schema]
 
-    def addSchema(part: PartitionSchema, schemaName: String, datas: Seq[DataSchema]): Schema = {
+    def addSchema(part: TimeSeriesSchema, schemaName: String, datas: Seq[DataSchema]): Schema = {
       val data = datas.find(_.name == schemaName).get
       schemas.getOrElseUpdate(data.name, {
         Schema(part, data, None)
@@ -440,7 +440,7 @@ object Schemas extends StrictLogging {
     }
 
     for {
-      partSchema <- PartitionSchema.fromConfig(config.getConfig("partition-schema"))
+      partSchema <- TimeSeriesSchema.fromConfig(config.getConfig("partition-schema"))
                                    .badMap(e => Seq(("<partition>", e)))
       dataSchemas <- validateDataSchemas(config.as[Map[String, Config]]("schemas"))
     } yield {

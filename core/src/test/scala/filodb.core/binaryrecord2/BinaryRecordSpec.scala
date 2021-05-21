@@ -27,7 +27,7 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
 
   import com.softwaremill.quicklens._
 
-  val dataset3 = modify(dataset2)(_.schema.partition.predefinedKeys).setTo(Seq("job", "instance"))
+  val dataset3 = modify(dataset2)(_.schema.timeseries.predefinedKeys).setTo(Seq("job", "instance"))
   val schemaWithPredefKeys = dataset3.schema.ingestionSchema
 
   before {
@@ -120,7 +120,7 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
       records.map { case (b, o) => schema1.ingestionSchema.getDouble(b, o, 1) } shouldEqual
         (1 to maxNumRecords).map(_.toDouble)
       records.foreach { case (b, o) =>
-        schema1.ingestionSchema.partitionHash(b, o) should not be (0)
+        schema1.ingestionSchema.tsHash(b, o) should not be (0)
         RecordSchema.schemaID(b, o) shouldEqual schema1.schemaHash
       }
       val container1Bytes = builder.allContainers.head.numBytes
@@ -160,7 +160,7 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
       // check min value
       addrs.map(recSchema1.getDouble(_, 1)) shouldEqual Buffer.fromIterable((1 to maxNumRecords).map(_.toDouble))
       addrs.foreach { a =>
-        recSchema1.partitionHash(a) should not be (0)
+        recSchema1.tsHash(a) should not be (0)
         RecordSchema.schemaID(a) shouldEqual schema1.schemaHash
       }
       val container1Bytes = builder.allContainers.head.numBytes
@@ -341,13 +341,13 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
       stringSchema.utf8StringPointer(addrAddReader, 0).compare(utf8MedStr) shouldEqual 0
 
       // Hashes should all be equal and not initial hash
-      stringSchema.partitionHash(addrStringAdd) should not equal (RecordBuilder.HASH_INIT)
-      stringSchema.partitionHash(addrBlobAdd) should not equal (RecordBuilder.HASH_INIT)
-      stringSchema.partitionHash(addrAddReader) should not equal (RecordBuilder.HASH_INIT)
+      stringSchema.tsHash(addrStringAdd) should not equal (RecordBuilder.HASH_INIT)
+      stringSchema.tsHash(addrBlobAdd) should not equal (RecordBuilder.HASH_INIT)
+      stringSchema.tsHash(addrAddReader) should not equal (RecordBuilder.HASH_INIT)
 
-      stringSchema.partitionHash(addrStringAdd) shouldEqual stringSchema.partitionHash(addrBlobAdd)
-      stringSchema.partitionHash(addrStringAdd) shouldEqual stringSchema.partitionHash(addrAddReader)
-      stringSchema.partitionHash(addrStringAdd) shouldEqual stringSchema.partitionHash(addrAddSlowly)
+      stringSchema.tsHash(addrStringAdd) shouldEqual stringSchema.tsHash(addrBlobAdd)
+      stringSchema.tsHash(addrStringAdd) shouldEqual stringSchema.tsHash(addrAddReader)
+      stringSchema.tsHash(addrStringAdd) shouldEqual stringSchema.tsHash(addrAddSlowly)
 
       // No schemaID should be added
       RecordSchema.schemaID(addrStringAdd) shouldEqual (123)
@@ -434,7 +434,7 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
       val brHashes = new collection.mutable.HashSet[Int]
       var lastHash = -1
       Seq(offset1, offset2, offset3).foreach { off =>
-        lastHash = recSchema2.partitionHash(basebase, off)
+        lastHash = recSchema2.tsHash(basebase, off)
         brHashes += lastHash
         // println(s"XXX: offset = $off   hash = $lastHash")
       }
@@ -443,7 +443,7 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
 
       // Adding the same content should result in the same hash
       val offset4 = addRec(3)
-      recSchema2.partitionHash(basebase, offset4) shouldEqual lastHash
+      recSchema2.tsHash(basebase, offset4) shouldEqual lastHash
     }
 
     it("should copy records to new byte arrays and compare equally") {
@@ -466,7 +466,7 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
   // just to let us test partitionMatch() independently of buildPartKeyFromIngest()
   private def dataset2AddPartKeys(builder: RecordBuilder, data: Stream[Seq[Any]]) = {
     data.foreach { values =>
-      builder.startNewRecord(dataset3.schema.partKeySchema, dataset3.schema.schemaHash)
+      builder.startNewRecord(dataset3.schema.tsKeySchema, dataset3.schema.schemaHash)
       builder.addString(values(5).asInstanceOf[String])  // series (partition key)
       if (values.length > 6) {
         builder.startMap()
@@ -543,8 +543,8 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
       records should have length (3)
       (0 to 2).foreach { n =>
         comparator2.partitionMatch(ingestRecords(n)._1, ingestRecords(n)._2, records(n)._1, records(n)._2) shouldEqual true
-        schemaWithPredefKeys.partitionHash(ingestRecords(n)._1, ingestRecords(n)._2) shouldEqual (
-          partSchema2.partitionHash(records(n)._1, records(n)._2))
+        schemaWithPredefKeys.tsHash(ingestRecords(n)._1, ingestRecords(n)._2) shouldEqual (
+          partSchema2.tsHash(records(n)._1, records(n)._2))
       }
 
       // Should be able to read tags for each record
@@ -577,8 +577,8 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
       (0 to 2).foreach { n =>
         histDataset.comparator.partitionMatch(histRecords(n)._1, histRecords(n)._2,
                                               records(n)._1, records(n)._2) shouldEqual true
-        histDataset.ingestionSchema.partitionHash(histRecords(n)._1, histRecords(n)._2) shouldEqual (
-          histDataset.partKeySchema.partitionHash(records(n)._1, records(n)._2))
+        histDataset.ingestionSchema.tsHash(histRecords(n)._1, histRecords(n)._2) shouldEqual (
+          histDataset.partKeySchema.tsHash(records(n)._1, records(n)._2))
       }
     }
   }

@@ -22,8 +22,8 @@ class PublishIntervalFinderSpec  extends AnyFunSpec with Matchers with ScalaFutu
     val seriesTags = Map("_ws_".utf8 -> "my_ws".utf8, "_ns_".utf8 -> "my_ns".utf8, "_step_".utf8 -> "10".utf8)
     val partBuilder = new RecordBuilder(nativeMemoryManager)
     val partKey = partBuilder.partKeyFromObjects(Schemas.promCounter, "counterName".utf8, seriesTags)
-    val pubInt = TimeSeriesPartition.publishIntervalFinder.findPublishIntervalMs(
-      Schemas.promCounter.partition.hash, UnsafeUtils.ZeroArray,
+    val pubInt = TimeSeries.publishIntervalFinder.findPublishIntervalMs(
+      Schemas.promCounter.timeseries.hash, UnsafeUtils.ZeroArray,
       partKey)
     pubInt shouldEqual Some(10000L)
   }
@@ -32,8 +32,8 @@ class PublishIntervalFinderSpec  extends AnyFunSpec with Matchers with ScalaFutu
     val seriesTags = Map("_ws_".utf8 -> "my_ws".utf8, "_ns_".utf8 -> "my_ns".utf8)
     val partBuilder = new RecordBuilder(nativeMemoryManager)
     val partKey = partBuilder.partKeyFromObjects(Schemas.promCounter, "counterName".utf8, seriesTags)
-    val pubInt = TimeSeriesPartition.publishIntervalFinder.findPublishIntervalMs(
-      Schemas.promCounter.partition.hash, UnsafeUtils.ZeroArray,
+    val pubInt = TimeSeries.publishIntervalFinder.findPublishIntervalMs(
+      Schemas.promCounter.timeseries.hash, UnsafeUtils.ZeroArray,
       partKey)
     pubInt shouldEqual None
   }

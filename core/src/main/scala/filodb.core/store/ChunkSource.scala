@@ -8,7 +8,7 @@ import monix.eval.Task
 import monix.reactive.Observable
 
 import filodb.core._
-import filodb.core.memstore.{PartLookupResult, SchemaMismatch, TimeSeriesShard}
+import filodb.core.memstore.{SchemaMismatch, TimeSeriesShard, TsLookupResult}
 import filodb.core.memstore.ratelimit.CardinalityRecord
 import filodb.core.metadata.{Schema, Schemas}
 import filodb.core.query._
@@ -37,17 +37,16 @@ trait RawChunkSource {
   /**
    * Reads and returns raw chunk data according to the method. ChunkSources implementing this method can use
    * any degree of parallelism/async under the covers to get the job done efficiently.
+   * Implemented by lower-level persistent ChunkSources to return "raw" partition data
    * @param ref the DatasetRef to read chunks from
-   * @param partMethod which partitions to scan
+   * @param tsMethod which partitions to scan
    * @param chunkMethod which chunks within a partition to scan
    * @return an Observable of RawPartDatas
-   */
-  /**
-   * Implemented by lower-level persistent ChunkSources to return "raw" partition data
+   *
    */
   def readRawPartitions(ref: DatasetRef,
                         maxChunkTime: Long,
-                        partMethod: PartitionScanMethod,
+                        tsMethod: TimeseriesScanMethod,
                         chunkMethod: ChunkScanMethod = AllChunkScan): Observable[RawPartData]
 }
 
@@ -87,9 +86,9 @@ trait ChunkSource extends RawChunkSource with StrictLogging {
    */
   def scanPartitions(ref: DatasetRef,
                      columnIDs: Seq[Types.ColumnId],
-                     partMethod: PartitionScanMethod,
+                     partMethod: TimeseriesScanMethod,
                      chunkMethod: ChunkScanMethod = AllChunkScan,
-                     querySession: QuerySession): Observable[ReadablePartition] = {
+                     querySession: QuerySession): Observable[ReadableTimeSeries] = {
     logger.debug(s"scanPartitions dataset=$ref shard=${partMethod.shard} " +
       s"partMethod=$partMethod chunkMethod=$chunkMethod")
     scanPartitions(ref, lookupPartitions(ref, partMethod, chunkMethod, querySession), columnIDs, querySession)
@@ -98,9 +97,9 @@ trait ChunkSource extends RawChunkSource with StrictLogging {
 
   // Internal API that needs to actually be implemented
   def scanPartitions(ref: DatasetRef,
-                     lookupRes: PartLookupResult,
+                     lookupRes: TsLookupResult,
                      colIds: Seq[Types.ColumnId],
-                     querySession: QuerySession): Observable[ReadablePartition]
+                     querySession: QuerySession): Observable[ReadableTimeSeries]
 
   // internal method to find # of groups in a dataset
   def groupsInDataset(ref: DatasetRef): Int
@@ -120,9 +119,9 @@ trait ChunkSource extends RawChunkSource with StrictLogging {
    * @return an PartLookupResult
    */
   def lookupPartitions(ref: DatasetRef,
-                       partMethod: PartitionScanMethod,
+                       partMethod: TimeseriesScanMethod,
                        chunkMethod: ChunkScanMethod,
-                       querySession: QuerySession): PartLookupResult
+                       querySession: QuerySession): TsLookupResult
 
   /**
    * Returns a stream of RangeVectors's.  Good for per-partition (or time series) processing.
@@ -135,13 +134,13 @@ trait ChunkSource extends RawChunkSource with StrictLogging {
    * @return an Observable of RangeVectors
    */
   def rangeVectors(ref: DatasetRef,
-                   lookupRes: PartLookupResult,
+                   lookupRes: TsLookupResult,
                    columnIDs: Seq[Types.ColumnId],
                    schema: Schema,
                    filterSchemas: Boolean,
                    querySession: QuerySession): Observable[RangeVector] = {
     val ids = columnIDs.toArray
-    val partCols = schema.infosFromIDs(schema.partition.columns.map(_.id))
+    val partCols = schema.infosFromIDs(schema.timeseries.columns.map(_.id))
     val numGroups = groupsInDataset(ref)
 
     val filteredParts = if (filterSchemas) {
@@ -162,11 +161,11 @@ trait ChunkSource extends RawChunkSource with StrictLogging {
 
     filteredParts.map { partition =>
       stats.incrReadPartitions(1)
-      val subgroup = TimeSeriesShard.partKeyGroup(schema.partKeySchema, partition.partKeyBase,
-                                                  partition.partKeyOffset, numGroups)
+      val subgroup = TimeSeriesShard.tsKeyGroup(schema.tsKeySchema, partition.tsKeyBase,
+                                                  partition.tsKeyOffset, numGroups)
       val key = PartitionRangeVectorKey(Left(partition),
-                                        schema.partKeySchema, partCols, partition.shard,
-                                        subgroup, partition.partID, schema.name)
+                                        schema.tsKeySchema, partCols, partition.shard,
+                                        subgroup, partition.tsId, schema.name)
       RawDataRangeVector(key, partition, lookupRes.chunkMethod, ids, lookupRes.queriedChunksCounter)
     }
   }
@@ -179,7 +178,7 @@ trait ChunkSource extends RawChunkSource with StrictLogging {
  * Responsible for uploading RawPartDatas to offheap memory and creating a queryable ReadablePartition
  */
 trait RawToPartitionMaker {
-  def populateRawChunks(rawPartition: RawPartData): Task[ReadablePartition]
+  def populateRawChunks(rawPartition: RawPartData): Task[ReadableTimeSeries]
 }
 
 /**

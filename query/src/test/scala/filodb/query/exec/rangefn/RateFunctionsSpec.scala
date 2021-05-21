@@ -2,7 +2,7 @@ package filodb.query.exec.rangefn
 
 import scala.util.Random
 import filodb.core.{MachineMetricsData, TestData}
-import filodb.core.memstore.{TimeSeriesPartition, WriteBufferPool}
+import filodb.core.memstore.{TimeSeries, WriteBufferPool}
 import filodb.core.metadata.Dataset
 import filodb.core.query.TransientRow
 import filodb.memory.format.vectors.{LongHistogram, MutableHistogram}
@@ -223,7 +223,7 @@ class RateFunctionsSpec extends RawDataWindowingSpec {
     val (data, rv) = MachineMetricsData.histogramRV(100000L, numSamples=7, pool=histBufferPool, ds=promHistDS)
 
     // Inject a few more samples with original data, which means a drop
-    val part = rv.partition.asInstanceOf[TimeSeriesPartition]
+    val part = rv.partition.asInstanceOf[TimeSeries]
     val dropData = data.map(d => (d.head.asInstanceOf[Long] + 70000L) +: d.drop(1))
     val container = MachineMetricsData.records(promHistDS, dropData).records
     val bh = MachineMetricsData.histIngestBH

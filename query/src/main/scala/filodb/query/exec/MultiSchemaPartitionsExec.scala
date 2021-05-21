@@ -41,7 +41,7 @@ final case class MultiSchemaPartitionsExec(queryContext: QueryContext,
 
   private def finalizePlan(source: ChunkSource,
                            querySession: QuerySession): SelectRawPartitionsExec = {
-    val partMethod = FilteredPartitionScan(ShardSplit(shard), filters)
+    val partMethod = FilteredTimeseriesScan(ShardSplit(shard), filters)
     Kamon.currentSpan().mark("filtered-partition-scan")
     val lookupRes = source.lookupPartitions(dataset, partMethod, chunkMethod, querySession)
     Kamon.currentSpan().mark("lookup-partitions-done")

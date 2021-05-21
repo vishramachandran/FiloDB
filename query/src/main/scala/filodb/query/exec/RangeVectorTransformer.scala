@@ -6,7 +6,7 @@ import scala.collection.mutable.ListBuffer
 import spire.syntax.cfor._
 
 import filodb.core.metadata.Column.ColumnType
-import filodb.core.metadata.PartitionSchema
+import filodb.core.metadata.TimeSeriesSchema
 import filodb.core.query._
 import filodb.core.query.Filter.Equals
 import filodb.memory.format.{RowReader, ZeroCopyUTF8String}
@@ -410,7 +410,7 @@ final case class BucketValues(schema: HistogramBuckets,
  * intensive.  Due to the semantics of Observables and the lazy nature, we cannot reuse data structures as
  * vectors may be pulled by the next reader at the same time this observable processes future vectors.
  */
-final case class HistToPromSeriesMapper(sch: PartitionSchema) extends RangeVectorTransformer {
+final case class HistToPromSeriesMapper(sch: TimeSeriesSchema) extends RangeVectorTransformer {
 
   protected[exec] def args: String = s"HistToPromSeriesMapper(options=${sch.options})"
 

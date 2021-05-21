@@ -3,7 +3,7 @@ package filodb.core.query
 import spire.syntax.cfor._
 
 import filodb.core.metadata.Dataset
-import filodb.core.store.{ChunkInfoIterator, ChunkSetInfoReader, ReadablePartition}
+import filodb.core.store.{ChunkInfoIterator, ChunkSetInfoReader, ReadableTimeSeries}
 import filodb.memory.format.{vectors => bv, RowReader, TypedIterator, UnsafeUtils, ZeroCopyUTF8String}
 
 /**
@@ -12,11 +12,11 @@ import filodb.memory.format.{vectors => bv, RowReader, TypedIterator, UnsafeUtil
  * One of these is instantiated for each separate query through each TSPartition.
  * NOTE: this reader assumes that you read consistently from every vector at every row. Or don't read that column.
  */
-final class PartitionTimeRangeReader(part: ReadablePartition,
-                                     startTime: Long,
-                                     endTime: Long,
-                                     infos: ChunkInfoIterator,
-                                     columnIDs: Array[Int]) extends RangeVectorCursor {
+final class TimeSeriesTimeRangeReader(part: ReadableTimeSeries,
+                                      startTime: Long,
+                                      endTime: Long,
+                                      infos: ChunkInfoIterator,
+                                      columnIDs: Array[Int]) extends RangeVectorCursor {
   // MinValue = no current chunk
   private var curChunkID = Long.MinValue
   private final val vectorIts = new Array[TypedIterator](columnIDs.size)
@@ -49,7 +49,7 @@ final class PartitionTimeRangeReader(part: ReadablePartition,
       val colID = columnIDs(pos)
       if (Dataset.isPartitionID(colID)) {
         // Look up the TypedIterator for that partition key
-        vectorIts(pos) = part.schema.partColIterator(colID, part.partKeyBase, part.partKeyOffset)
+        vectorIts(pos) = part.schema.partColIterator(colID, part.tsKeyBase, part.tsKeyOffset)
       } else {
         val vectorAcc = info.vectorAccessor(colID)
         val vectorPtr = info.vectorAddress(colID)

@@ -547,22 +547,22 @@ trait CassandraChunkSource extends RawChunkSource with StrictLogging {
     * @param ref dataset ref
     * @param maxChunkTime maximum userTime (in millis) allowed in a single chunk. This restriction makes it
     *                     possible to issue single CQL query to fetch all relevant chunks from cassandra
-    * @param partMethod selector for partitions
+    * @param tsMethod selector for partitions
     * @param chunkMethod selector for chunks
     * @return Stored chunks and infos for each matching partition
     */
   def readRawPartitions(ref: DatasetRef,
                         maxChunkTime: Long,
-                        partMethod: PartitionScanMethod,
+                        tsMethod: TimeseriesScanMethod,
                         chunkMethod: ChunkScanMethod = AllChunkScan): Observable[RawPartData] = {
     val chunkTable = getOrCreateChunkTable(ref)
-    partMethod match {
-      case FilteredPartitionScan(CassandraTokenRangeSplit(tokens, _), Nil)  =>
+    tsMethod match {
+      case FilteredTimeseriesScan(CassandraTokenRangeSplit(tokens, _), Nil)  =>
         chunkTable.scanPartitionsBySplit(tokens)
       case _ =>
-        val partitions = partMethod match {
-          case MultiPartitionScan(p, _) => p
-          case SinglePartitionScan(p, _) => Seq(p)
+        val partitions = tsMethod match {
+          case MultiTimeseriesScan(p, _) => p
+          case SingleTimeseriesScan(p, _) => Seq(p)
           case p => throw new UnsupportedOperationException(s"PartitionScan $p to be implemented later")
         }
         val (start, end) = if (chunkMethod == AllChunkScan) (minChunkUserTime, maxChunkUserTime)

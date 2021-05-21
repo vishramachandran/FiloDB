@@ -33,7 +33,7 @@ class IngestionBenchmark {
   // # of records in a container to test ingestion speed
   val dataStream = withMap(linearMultiSeries(), extraTags = extraTags)
 
-  val predefKeySchema = dataset2.schema.copy(partition = dataset2.schema.partition.copy(
+  val predefKeySchema = dataset2.schema.copy(timeseries = dataset2.schema.timeseries.copy(
                           predefinedKeys = Seq("job", "instance")))
   val schemaWithPredefKeys = predefKeySchema.ingestionSchema
   // sized just big enough for a 1000 entries per container

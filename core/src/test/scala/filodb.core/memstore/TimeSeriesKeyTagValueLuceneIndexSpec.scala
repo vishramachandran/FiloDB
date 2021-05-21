@@ -17,11 +17,11 @@ import filodb.memory.format.ZeroCopyUTF8String._
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 
-class PartKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter {
+class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter {
   import Filter._
   import GdeltTestData._
 
-  val keyIndex = new PartKeyLuceneIndex(dataset6.ref, dataset6.schema.partition, 0, 1.hour.toMillis)
+  val keyIndex = new TimeSeriesKeyTagValueLuceneIndex(dataset6.ref, dataset6.schema.timeseries, 0, 1.hour.toMillis)
   val partBuilder = new RecordBuilder(TestData.nativeMem)
 
   def partKeyOnHeap(dataset: Dataset,
@@ -56,31 +56,31 @@ class PartKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     keyIndex.refreshReadersBlocking()
 
     // Should get empty iterator when passing no filters
-    val partNums1 = keyIndex.partIdsFromFilters(Nil, start, end)
+    val partNums1 = keyIndex.tsIdsFromFilters(Nil, start, end)
     partNums1 shouldEqual debox.Buffer(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
     val filter2 = ColumnFilter("Actor2Code", Equals("GOV".utf8))
-    val partNums2 = keyIndex.partIdsFromFilters(Seq(filter2), start, end)
+    val partNums2 = keyIndex.tsIdsFromFilters(Seq(filter2), start, end)
     partNums2 shouldEqual debox.Buffer(7, 8, 9)
 
     val filter3 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums3 = keyIndex.partIdsFromFilters(Seq(filter3), start, end)
+    val partNums3 = keyIndex.tsIdsFromFilters(Seq(filter3), start, end)
     partNums3 shouldEqual debox.Buffer(8, 9)
 
     val filter4 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums4 = keyIndex.partIdsFromFilters(Seq(filter4), 10, start-1)
+    val partNums4 = keyIndex.tsIdsFromFilters(Seq(filter4), 10, start-1)
     partNums4 shouldEqual debox.Buffer.empty[Int]
 
     val filter5 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums5 = keyIndex.partIdsFromFilters(Seq(filter5), end + 100, end + 100000)
+    val partNums5 = keyIndex.tsIdsFromFilters(Seq(filter5), end + 100, end + 100000)
     partNums5 should not equal debox.Buffer.empty[Int]
 
     val filter6 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums6 = keyIndex.partIdsFromFilters(Seq(filter6), start - 10000, end )
+    val partNums6 = keyIndex.tsIdsFromFilters(Seq(filter6), start - 10000, end )
     partNums6 should not equal debox.Buffer.empty[Int]
 
     val filter7 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums7 = keyIndex.partIdsFromFilters(Seq(filter7), (start + end)/2, end + 1000 )
+    val partNums7 = keyIndex.tsIdsFromFilters(Seq(filter7), (start + end)/2, end + 1000 )
     partNums7 should not equal debox.Buffer.empty[Int]
 
   }
@@ -91,7 +91,7 @@ class PartKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfte
       .zipWithIndex.map { case (addr, i) =>
       val pk = partKeyOnHeap(dataset6, ZeroPointer, addr)
       keyIndex.addPartKey(pk, i, i, i + 10)()
-        PartKeyLuceneIndexRecord(pk, i, i + 10)
+        TsKeyLuceneIndexRecord(pk, i, i + 10)
     }
     keyIndex.refreshReadersBlocking()
 
@@ -162,7 +162,7 @@ class PartKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     keyIndex.refreshReadersBlocking()
 
     for { i <- 0 until numPartIds} {
-      keyIndex.partKeyFromPartId(i).isDefined shouldEqual (if (i <= 100) false else true)
+      keyIndex.tsKeyFromTsId(i).isDefined shouldEqual (if (i <= 100) false else true)
     }
 
   }
@@ -181,31 +181,31 @@ class PartKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     keyIndex.refreshReadersBlocking()
 
     // Should get empty iterator when passing no filters
-    val partNums1 = keyIndex.partIdsFromFilters(Nil, start, end)
+    val partNums1 = keyIndex.tsIdsFromFilters(Nil, start, end)
     partNums1 shouldEqual debox.Buffer(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
     val filter2 = ColumnFilter("Actor2Code", Equals("GOV".utf8))
-    val partNums2 = keyIndex.partIdsFromFilters(Seq(filter2), start, end)
+    val partNums2 = keyIndex.tsIdsFromFilters(Seq(filter2), start, end)
     partNums2 shouldEqual debox.Buffer(7, 8, 9)
 
     val filter3 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums3 = keyIndex.partIdsFromFilters(Seq(filter3), start, end)
+    val partNums3 = keyIndex.tsIdsFromFilters(Seq(filter3), start, end)
     partNums3 shouldEqual debox.Buffer(8, 9)
 
     val filter4 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums4 = keyIndex.partIdsFromFilters(Seq(filter4), 10, start-1)
+    val partNums4 = keyIndex.tsIdsFromFilters(Seq(filter4), 10, start-1)
     partNums4 shouldEqual debox.Buffer.empty[Int]
 
     val filter5 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums5 = keyIndex.partIdsFromFilters(Seq(filter5), end + 20000, end + 100000)
+    val partNums5 = keyIndex.tsIdsFromFilters(Seq(filter5), end + 20000, end + 100000)
     partNums5 shouldEqual debox.Buffer.empty[Int]
 
     val filter6 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums6 = keyIndex.partIdsFromFilters(Seq(filter6), start - 10000, end-1 )
+    val partNums6 = keyIndex.tsIdsFromFilters(Seq(filter6), start - 10000, end-1 )
     partNums6 should not equal debox.Buffer.empty[Int]
 
     val filter7 = ColumnFilter("Actor2Name", Equals("REGIME".utf8))
-    val partNums7 = keyIndex.partIdsFromFilters(Seq(filter7), (start + end)/2, end + 1000 )
+    val partNums7 = keyIndex.tsIdsFromFilters(Seq(filter7), (start + end)/2, end + 1000 )
     partNums7 should not equal debox.Buffer.empty[Int]
   }
 
@@ -219,11 +219,11 @@ class PartKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     keyIndex.refreshReadersBlocking()
 
     val filter2 = ColumnFilter("Actor2Name", Equals(UTF8Wrapper("REGIME".utf8)))
-    val partNums2 = keyIndex.partIdsFromFilters(Seq(filter2), 0, Long.MaxValue)
+    val partNums2 = keyIndex.tsIdsFromFilters(Seq(filter2), 0, Long.MaxValue)
     partNums2 shouldEqual debox.Buffer(8, 9)
 
     val filter3 = ColumnFilter("Actor2Name", Equals("REGIME"))
-    val partNums3 = keyIndex.partIdsFromFilters(Seq(filter3), 0, Long.MaxValue)
+    val partNums3 = keyIndex.tsIdsFromFilters(Seq(filter3), 0, Long.MaxValue)
     partNums3 shouldEqual debox.Buffer(8, 9)
   }
 
@@ -259,24 +259,24 @@ class PartKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfte
 
     val filters1 = Seq(ColumnFilter("Actor2Code", Equals("GOV".utf8)),
       ColumnFilter("Actor2Name", Equals("REGIME".utf8)))
-    val partNums1 = keyIndex.partIdsFromFilters(filters1, 0, Long.MaxValue)
+    val partNums1 = keyIndex.tsIdsFromFilters(filters1, 0, Long.MaxValue)
     partNums1 shouldEqual debox.Buffer(8, 9)
 
     val filters2 = Seq(ColumnFilter("Actor2Code", Equals("GOV".utf8)),
       ColumnFilter("Actor2Name", Equals("CHINA".utf8)))
-    val partNums2 = keyIndex.partIdsFromFilters(filters2, 0, Long.MaxValue)
+    val partNums2 = keyIndex.tsIdsFromFilters(filters2, 0, Long.MaxValue)
     partNums2 shouldEqual debox.Buffer.empty[Int]
   }
 
   it("should ignore unsupported columns and return empty filter") {
-    val index2 = new PartKeyLuceneIndex(dataset1.ref, dataset1.schema.partition, 0, 1.hour.toMillis)
+    val index2 = new TimeSeriesKeyTagValueLuceneIndex(dataset1.ref, dataset1.schema.timeseries, 0, 1.hour.toMillis)
     partKeyFromRecords(dataset1, records(dataset1, readers.take(10))).zipWithIndex.foreach { case (addr, i) =>
       index2.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
     keyIndex.refreshReadersBlocking()
 
     val filters1 = Seq(ColumnFilter("Actor2Code", Equals("GOV".utf8)), ColumnFilter("Year", Equals(1979)))
-    val partNums1 = index2.partIdsFromFilters(filters1, 0, Long.MaxValue)
+    val partNums1 = index2.tsIdsFromFilters(filters1, 0, Long.MaxValue)
     partNums1 shouldEqual debox.Buffer.empty[Int]
   }
 
@@ -287,7 +287,7 @@ class PartKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfte
       val partKeyBytes = partKeyOnHeap(dataset6, ZeroPointer, addr)
       keyIndex.addPartKey(partKeyBytes, i, System.currentTimeMillis())()
       keyIndex.refreshReadersBlocking()
-      keyIndex.partKeyFromPartId(i).get.bytes shouldEqual partKeyBytes
+      keyIndex.tsKeyFromTsId(i).get.bytes shouldEqual partKeyBytes
 //      keyIndex.partIdFromPartKey(new BytesRef(partKeyBytes)) shouldEqual i
     }
   }

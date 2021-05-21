@@ -10,7 +10,7 @@ import spire.syntax.cfor._
 
 import filodb.core.DatasetRef
 import filodb.core.binaryrecord2.RecordBuilder
-import filodb.core.memstore.PartKeyLuceneIndex
+import filodb.core.memstore.TimeSeriesKeyTagValueLuceneIndex
 import filodb.core.metadata.Schemas.untyped
 import filodb.core.query.{ColumnFilter, Filter}
 import filodb.memory.{BinaryRegionConsumer, MemFactory}
@@ -22,7 +22,7 @@ class PartKeyIndexBenchmark {
   org.slf4j.LoggerFactory.getLogger("filodb").asInstanceOf[Logger].setLevel(Level.ERROR)
 
   val ref = DatasetRef("prometheus")
-  val partKeyIndex = new PartKeyLuceneIndex(ref, untyped.partition, 0, 1.hour.toMillis)
+  val partKeyIndex = new TimeSeriesKeyTagValueLuceneIndex(ref, untyped.timeseries, 0, 1.hour.toMillis)
   val numSeries = 1000000
   val ingestBuilder = new RecordBuilder(MemFactory.onHeapFactory)
   val untypedData = TestTimeseriesProducer.timeSeriesData(0, numSeries) take numSeries
@@ -40,7 +40,7 @@ class PartKeyIndexBenchmark {
   val now = System.currentTimeMillis()
   val consumer = new BinaryRegionConsumer {
     def onNext(base: Any, offset: Long): Unit = {
-      val partKey = untyped.partition.binSchema.asByteArray(base, offset)
+      val partKey = untyped.timeseries.binSchema.asByteArray(base, offset)
       partKeyIndex.addPartKey(partKey, partId, now)()
       partId += 1
     }
@@ -53,7 +53,7 @@ class PartKeyIndexBenchmark {
   @OutputTimeUnit(TimeUnit.SECONDS)
   def partIdsLookupWithEqualsFilters(): Unit = {
     cforRange ( 0 until 8 ) { i =>
-      partKeyIndex.partIdsFromFilters(
+      partKeyIndex.tsIdsFromFilters(
         Seq(ColumnFilter("_ns_", Filter.Equals(s"App-$i")),
             ColumnFilter("_ws_", Filter.Equals("demo")),
             ColumnFilter("host", Filter.EqualsRegex("H0")),
@@ -68,7 +68,7 @@ class PartKeyIndexBenchmark {
   @OutputTimeUnit(TimeUnit.SECONDS)
   def emptyPartIdsLookupWithEqualsFilters(): Unit = {
     cforRange ( 0 until 8 ) { i =>
-      partKeyIndex.partIdsFromFilters(
+      partKeyIndex.tsIdsFromFilters(
         Seq(ColumnFilter("_ns_", Filter.Equals(s"App-${i + 200}")),
           ColumnFilter("_ws_", Filter.Equals("demo")),
           ColumnFilter("host", Filter.EqualsRegex("H0")),
@@ -83,7 +83,7 @@ class PartKeyIndexBenchmark {
   @OutputTimeUnit(TimeUnit.SECONDS)
   def partIdsLookupWithSuffixRegexFilters(): Unit = {
     cforRange ( 0 until 8 ) { i =>
-      partKeyIndex.partIdsFromFilters(
+      partKeyIndex.tsIdsFromFilters(
         Seq(ColumnFilter("_ns_", Filter.Equals(s"App-$i")),
           ColumnFilter("_ws_", Filter.Equals("demo")),
           ColumnFilter("__name__", Filter.Equals("heap_usage")),
@@ -98,7 +98,7 @@ class PartKeyIndexBenchmark {
   @OutputTimeUnit(TimeUnit.SECONDS)
   def partIdsLookupWithPrefixRegexFilters(): Unit = {
     cforRange ( 0 until 8 ) { i =>
-      partKeyIndex.partIdsFromFilters(
+      partKeyIndex.tsIdsFromFilters(
         Seq(ColumnFilter("_ns_", Filter.Equals(s"App-$i")),
           ColumnFilter("_ws_", Filter.Equals("demo")),
           ColumnFilter("__name__", Filter.Equals("heap_usage")),

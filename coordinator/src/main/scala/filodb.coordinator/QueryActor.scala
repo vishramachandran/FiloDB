@@ -50,7 +50,7 @@ final class QueryActor(memStore: MemStore,
   import filodb.core.memstore.FiloSchedulers._
 
   val config = context.system.settings.config
-  val dsOptions = schemas.part.options
+  val dsOptions = schemas.ts.options
 
   var filodbSpreadMap = new collection.mutable.HashMap[collection.Map[String, String], Int]
   val applicationShardKeyNames = dsOptions.nonMetricShardColumns

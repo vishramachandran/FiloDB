@@ -6,12 +6,12 @@ import filodb.core.GlobalScheduler._
 import filodb.core.MachineMetricsData
 import filodb.core.binaryrecord2.{BinaryRecordRowReader, RecordBuilder, RecordSchema}
 import filodb.core.downsample.{DownsampledTimeSeriesStore, OffHeapMemory}
-import filodb.core.memstore.{PagedReadablePartition, TimeSeriesPartition}
+import filodb.core.memstore.{PagedReadableTimeSeries, TimeSeries}
 import filodb.core.memstore.FiloSchedulers.QuerySchedName
 import filodb.core.metadata.{Dataset, Schemas}
 import filodb.core.query._
 import filodb.core.query.Filter.Equals
-import filodb.core.store.{AllChunkScan, PartKeyRecord, SinglePartitionScan, StoreConfig}
+import filodb.core.store.{AllChunkScan, PartKeyRecord, SingleTimeseriesScan, StoreConfig}
 import filodb.downsampler.chunk.{BatchDownsampler, Downsampler, DownsamplerSettings}
 import filodb.downsampler.index.{DSIndexJobSettings, IndexJobDriver}
 import filodb.memory.format.{PrimitiveVectorReader, UnsafeUtils}
@@ -109,11 +109,11 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val partBuilder = new RecordBuilder(offheapMem.nativeMemoryManager)
     val partKey = partBuilder.partKeyFromObjects(Schemas.untyped, untypedName, seriesTags)
 
-    val part = new TimeSeriesPartition(0, Schemas.untyped, partKey,
+    val part = new TimeSeries(0, Schemas.untyped, partKey,
       0, offheapMem.bufferPools(Schemas.untyped.schemaHash), batchDownsampler.shardStats,
       offheapMem.nativeMemoryManager, 1)
 
-    untypedPartKeyBytes = part.partKeyBytes
+    untypedPartKeyBytes = part.tsKeyBytes
 
     val rawSamples = Stream(
       Seq(74372801000L, 3d, untypedName, seriesTags),
@@ -152,11 +152,11 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val partBuilder = new RecordBuilder(offheapMem.nativeMemoryManager)
     val partKey = partBuilder.partKeyFromObjects(Schemas.gauge, gaugeName, seriesTags)
 
-    val part = new TimeSeriesPartition(0, Schemas.gauge, partKey,
+    val part = new TimeSeries(0, Schemas.gauge, partKey,
       0, offheapMem.bufferPools(Schemas.gauge.schemaHash), batchDownsampler.shardStats,
       offheapMem.nativeMemoryManager, 1)
 
-    gaugePartKeyBytes = part.partKeyBytes
+    gaugePartKeyBytes = part.tsKeyBytes
 
     val rawSamples = Stream(
       Seq(74372801000L, 3d, gaugeName, seriesTags),
@@ -195,11 +195,11 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val partBuilder = new RecordBuilder(offheapMem.nativeMemoryManager)
     val partKey = partBuilder.partKeyFromObjects(Schemas.gauge, gaugeLowFreqName, seriesTags)
 
-    val part = new TimeSeriesPartition(0, Schemas.gauge, partKey,
+    val part = new TimeSeries(0, Schemas.gauge, partKey,
       0, offheapMem.bufferPools(Schemas.gauge.schemaHash), batchDownsampler.shardStats,
       offheapMem.nativeMemoryManager, 1)
 
-    gaugeLowFreqPartKeyBytes = part.partKeyBytes
+    gaugeLowFreqPartKeyBytes = part.tsKeyBytes
 
     val rawSamples = Stream(
       Seq(74372801000L, 3d, gaugeName, seriesTags),
@@ -236,11 +236,11 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val partBuilder = new RecordBuilder(offheapMem.nativeMemoryManager)
     val partKey = partBuilder.partKeyFromObjects(Schemas.promCounter, counterName, seriesTags)
 
-    val part = new TimeSeriesPartition(0, Schemas.promCounter, partKey,
+    val part = new TimeSeries(0, Schemas.promCounter, partKey,
       0, offheapMem.bufferPools(Schemas.promCounter.schemaHash), batchDownsampler.shardStats,
       offheapMem.nativeMemoryManager, 1)
 
-    counterPartKeyBytes = part.partKeyBytes
+    counterPartKeyBytes = part.tsKeyBytes
 
     val rawSamples = Stream(
       Seq(74372801000L, 3d, counterName, seriesTags),
@@ -283,11 +283,11 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val partBuilder = new RecordBuilder(offheapMem.nativeMemoryManager)
     val partKey = partBuilder.partKeyFromObjects(Schemas.promHistogram, histName, seriesTags)
 
-    val part = new TimeSeriesPartition(0, Schemas.promHistogram, partKey,
+    val part = new TimeSeries(0, Schemas.promHistogram, partKey,
       0, offheapMem.bufferPools(Schemas.promHistogram.schemaHash), batchDownsampler.shardStats,
       offheapMem.nativeMemoryManager, 1)
 
-    histPartKeyBytes = part.partKeyBytes
+    histPartKeyBytes = part.tsKeyBytes
 
     val bucketScheme = CustomBuckets(Array(3d, 10d, Double.PositiveInfinity))
     val rawSamples = Stream( // time, sum, count, hist, name, tags
@@ -331,11 +331,11 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val partBuilder = new RecordBuilder(offheapMem.nativeMemoryManager)
     val partKey = partBuilder.partKeyFromObjects(Schemas.promHistogram, histNameNaN, seriesTagsNaN)
 
-    val part = new TimeSeriesPartition(0, Schemas.promHistogram, partKey,
+    val part = new TimeSeries(0, Schemas.promHistogram, partKey,
       0, offheapMem.bufferPools(Schemas.promHistogram.schemaHash), batchDownsampler.shardStats,
       offheapMem.nativeMemoryManager, 1)
 
-    histNaNPartKeyBytes = part.partKeyBytes
+    histNaNPartKeyBytes = part.tsKeyBytes
 
     val bucketScheme = CustomBuckets(Array(3d, 10d, Double.PositiveInfinity))
     val rawSamples = Stream( // time, sum, count, hist, name, tags
@@ -389,7 +389,7 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val pks = for { i <- 0 to 10000 } yield {
       val schema = schemas(i % schemas.size)
       val partKey = partBuilder.partKeyFromObjects(schema, s"bulkmetric$i", bulkSeriesTags)
-      val bytes = schema.partKeySchema.asByteArray(UnsafeUtils.ZeroPointer, partKey)
+      val bytes = schema.tsKeySchema.asByteArray(UnsafeUtils.ZeroPointer, partKey)
       PkToWrite(PartKeyRecord(bytes, i, i + 500, Some(-i)), i % numShards,
         bulkPkUpdateHours(i % bulkPkUpdateHours.size))
     }
@@ -427,7 +427,7 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     def pkMetricSchemaReader(pkr: PartKeyRecord): (String, String) = {
       val schemaId = RecordSchema.schemaID(pkr.partKey, UnsafeUtils.arayOffset)
       val partSchema = batchDownsampler.schemas(schemaId)
-      val strPairs = batchDownsampler.schemas.part.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
+      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
       (strPairs.find(p => p._1 == "_metric_").get._2, partSchema.data.name)
     }
 
@@ -444,7 +444,7 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
   it("should verify bulk part key record migration and validate completeness of PK migration") {
 
     def pkMetricName(pkr: PartKeyRecord): String = {
-      val strPairs = batchDownsampler.schemas.part.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
+      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
       strPairs.find(p => p._1 == "_metric_").head._2
     }
     val readKeys = (0 until 4).flatMap { shard =>
@@ -463,13 +463,13 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val downsampledPartData1 = downsampleColStore.readRawPartitions(
       batchDownsampler.downsampleRefsByRes(FiniteDuration(1, "min")),
       0,
-      SinglePartitionScan(dsGaugePartKeyBytes))
+      SingleTimeseriesScan(dsGaugePartKeyBytes))
       .toListL.runAsync.futureValue.head
 
-    val downsampledPart1 = new PagedReadablePartition(Schemas.gauge.downsample.get, 0, 0,
+    val downsampledPart1 = new PagedReadableTimeSeries(Schemas.gauge.downsample.get, 0, 0,
       downsampledPartData1, Some(1.minute.toMillis))
 
-    downsampledPart1.partKeyBytes shouldEqual dsGaugePartKeyBytes
+    downsampledPart1.tsKeyBytes shouldEqual dsGaugePartKeyBytes
 
     val rv1 = RawDataRangeVector(CustomRangeVectorKey.empty, downsampledPart1, AllChunkScan, Array(0, 1, 2, 3, 4, 5),
       Kamon.counter("dummy").withoutTags())
@@ -500,13 +500,13 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val downsampledPartData1 = downsampleColStore.readRawPartitions(
       batchDownsampler.downsampleRefsByRes(FiniteDuration(1, "min")),
       0,
-      SinglePartitionScan(dsGaugeLowFreqPartKeyBytes))
+      SingleTimeseriesScan(dsGaugeLowFreqPartKeyBytes))
       .toListL.runAsync.futureValue.head
 
-    val downsampledPart1 = new PagedReadablePartition(Schemas.gauge.downsample.get, 0, 0,
+    val downsampledPart1 = new PagedReadableTimeSeries(Schemas.gauge.downsample.get, 0, 0,
       downsampledPartData1, Some(1.minute.toMillis))
 
-    downsampledPart1.partKeyBytes shouldEqual dsGaugeLowFreqPartKeyBytes
+    downsampledPart1.tsKeyBytes shouldEqual dsGaugeLowFreqPartKeyBytes
 
     val rv1 = RawDataRangeVector(CustomRangeVectorKey.empty, downsampledPart1, AllChunkScan, Array(0, 1, 2, 3, 4, 5),
       Kamon.counter("dummy").withoutTags())
@@ -528,13 +528,13 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val downsampledPartData1 = downsampleColStore.readRawPartitions(
       batchDownsampler.downsampleRefsByRes(FiniteDuration(1, "min")),
       0,
-      SinglePartitionScan(counterPartKeyBytes))
+      SingleTimeseriesScan(counterPartKeyBytes))
       .toListL.runAsync.futureValue.head
 
-    val downsampledPart1 = new PagedReadablePartition(Schemas.promCounter.downsample.get, 0, 0,
+    val downsampledPart1 = new PagedReadableTimeSeries(Schemas.promCounter.downsample.get, 0, 0,
       downsampledPartData1, Some(1.minute.toMillis))
 
-    downsampledPart1.partKeyBytes shouldEqual counterPartKeyBytes
+    downsampledPart1.tsKeyBytes shouldEqual counterPartKeyBytes
 
     val ctrChunkInfo = downsampledPart1.infos(AllChunkScan).nextInfoReader
     PrimitiveVectorReader.dropped(ctrChunkInfo.vectorAccessor(1), ctrChunkInfo.vectorAddress(1)) shouldEqual true
@@ -571,13 +571,13 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val downsampledPartData1 = downsampleColStore.readRawPartitions(
       batchDownsampler.downsampleRefsByRes(FiniteDuration(1, "min")),
       0,
-      SinglePartitionScan(histPartKeyBytes))
+      SingleTimeseriesScan(histPartKeyBytes))
       .toListL.runAsync.futureValue.head
 
-    val downsampledPart1 = new PagedReadablePartition(Schemas.promHistogram.downsample.get, 0, 0,
+    val downsampledPart1 = new PagedReadableTimeSeries(Schemas.promHistogram.downsample.get, 0, 0,
       downsampledPartData1, Some(5.minutes.toMillis))
 
-    downsampledPart1.partKeyBytes shouldEqual histPartKeyBytes
+    downsampledPart1.tsKeyBytes shouldEqual histPartKeyBytes
 
     val ctrChunkInfo = downsampledPart1.infos(AllChunkScan).nextInfoReader
     PrimitiveVectorReader.dropped(ctrChunkInfo.vectorAccessor(2), ctrChunkInfo.vectorAddress(2)) shouldEqual true
@@ -617,13 +617,13 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val downsampledPartData1 = downsampleColStore.readRawPartitions(
       batchDownsampler.downsampleRefsByRes(FiniteDuration(1, "min")),
       0,
-      SinglePartitionScan(histNaNPartKeyBytes))
+      SingleTimeseriesScan(histNaNPartKeyBytes))
       .toListL.runAsync.futureValue.head
 
-    val downsampledPart1 = new PagedReadablePartition(Schemas.promHistogram.downsample.get, 0, 0,
+    val downsampledPart1 = new PagedReadableTimeSeries(Schemas.promHistogram.downsample.get, 0, 0,
       downsampledPartData1, Some(5.minutes.toMillis))
 
-    downsampledPart1.partKeyBytes shouldEqual histNaNPartKeyBytes
+    downsampledPart1.tsKeyBytes shouldEqual histNaNPartKeyBytes
 
     val ctrChunkInfo = downsampledPart1.infos(AllChunkScan).nextInfoReader
     val acc = ctrChunkInfo.vectorAccessor(2)
@@ -673,13 +673,13 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val downsampledPartData2 = downsampleColStore.readRawPartitions(
       batchDownsampler.downsampleRefsByRes(FiniteDuration(5, "min")),
       0,
-      SinglePartitionScan(dsGaugePartKeyBytes))
+      SingleTimeseriesScan(dsGaugePartKeyBytes))
       .toListL.runAsync.futureValue.head
 
-    val downsampledPart2 = new PagedReadablePartition(Schemas.gauge.downsample.get, 0, 0,
+    val downsampledPart2 = new PagedReadableTimeSeries(Schemas.gauge.downsample.get, 0, 0,
       downsampledPartData2, Some(5.minutes.toMillis))
 
-    downsampledPart2.partKeyBytes shouldEqual dsGaugePartKeyBytes
+    downsampledPart2.tsKeyBytes shouldEqual dsGaugePartKeyBytes
 
     val rv2 = RawDataRangeVector(CustomRangeVectorKey.empty, downsampledPart2, AllChunkScan, Array(0, 1, 2, 3, 4, 5),
       Kamon.counter("dummy").withoutTags())
@@ -700,13 +700,13 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val downsampledPartData1 = downsampleColStore.readRawPartitions(
       batchDownsampler.downsampleRefsByRes(FiniteDuration(5, "min")),
       0,
-      SinglePartitionScan(counterPartKeyBytes))
+      SingleTimeseriesScan(counterPartKeyBytes))
       .toListL.runAsync.futureValue.head
 
-    val downsampledPart1 = new PagedReadablePartition(Schemas.promCounter.downsample.get, 0, 0,
+    val downsampledPart1 = new PagedReadableTimeSeries(Schemas.promCounter.downsample.get, 0, 0,
       downsampledPartData1, Some(5.minutes.toMillis))
 
-    downsampledPart1.partKeyBytes shouldEqual counterPartKeyBytes
+    downsampledPart1.tsKeyBytes shouldEqual counterPartKeyBytes
 
     val rv1 = RawDataRangeVector(CustomRangeVectorKey.empty, downsampledPart1, AllChunkScan, Array(0, 1),
       Kamon.counter("dummy").withoutTags())
@@ -741,13 +741,13 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val downsampledPartData1 = downsampleColStore.readRawPartitions(
       batchDownsampler.downsampleRefsByRes(FiniteDuration(5, "min")),
       0,
-      SinglePartitionScan(histPartKeyBytes))
+      SingleTimeseriesScan(histPartKeyBytes))
       .toListL.runAsync.futureValue.head
 
-    val downsampledPart1 = new PagedReadablePartition(Schemas.promHistogram.downsample.get, 0, 0,
+    val downsampledPart1 = new PagedReadableTimeSeries(Schemas.promHistogram.downsample.get, 0, 0,
       downsampledPartData1, Some(5.minutes.toMillis))
 
-    downsampledPart1.partKeyBytes shouldEqual histPartKeyBytes
+    downsampledPart1.tsKeyBytes shouldEqual histPartKeyBytes
 
     val ctrChunkInfo = downsampledPart1.infos(AllChunkScan).nextInfoReader
     val acc = ctrChunkInfo.vectorAccessor(2)
@@ -784,13 +784,13 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val downsampledPartData1 = downsampleColStore.readRawPartitions(
       batchDownsampler.downsampleRefsByRes(FiniteDuration(5, "min")),
       0,
-      SinglePartitionScan(histNaNPartKeyBytes))
+      SingleTimeseriesScan(histNaNPartKeyBytes))
       .toListL.runAsync.futureValue.head
 
-    val downsampledPart1 = new PagedReadablePartition(Schemas.promHistogram.downsample.get, 0, 0,
+    val downsampledPart1 = new PagedReadableTimeSeries(Schemas.promHistogram.downsample.get, 0, 0,
       downsampledPartData1, Some(5.minutes.toMillis))
 
-    downsampledPart1.partKeyBytes shouldEqual histNaNPartKeyBytes
+    downsampledPart1.tsKeyBytes shouldEqual histNaNPartKeyBytes
 
     val ctrChunkInfo = downsampledPart1.infos(AllChunkScan).nextInfoReader
     val acc = ctrChunkInfo.vectorAccessor(2)
@@ -984,7 +984,7 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
   it("should verify bulk part key records are absent after card busting by time filter in downsample tables") {
 
     def pkMetricName(pkr: PartKeyRecord): String = {
-      val strPairs = batchDownsampler.schemas.part.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
+      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
       strPairs.find(p => p._1 == "_metric_").head._2
     }
 
@@ -1036,7 +1036,7 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
   it("should verify bulk part key records are absent after deletion in both raw and downsample tables") {
 
     def pkMetricName(pkr: PartKeyRecord): String = {
-      val strPairs = batchDownsampler.schemas.part.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
+      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
       strPairs.find(p => p._1 == "_metric_").head._2
     }
 

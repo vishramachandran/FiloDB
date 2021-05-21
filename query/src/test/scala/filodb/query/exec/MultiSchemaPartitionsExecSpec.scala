@@ -63,7 +63,7 @@ class MultiSchemaPartitionsExecSpec extends AnyFunSpec with Matchers with ScalaF
   val tuples = (numRawSamples until 0).by(-1).map { n =>
     (now - n * reportingInterval, n.toDouble)
   }
-  val schemas = Schemas(promCounter.partition,
+  val schemas = Schemas(promCounter.timeseries,
                         Map(promCounter.name -> promCounter,
                             "histogram" -> MMD.histDataset.schema,
                             Schemas.dsGauge.name -> Schemas.dsGauge))

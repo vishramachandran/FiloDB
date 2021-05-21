@@ -241,7 +241,7 @@ extends WrappedCursor(rv.rows()) with StrictLogging {
             s"curWinStart=${wit.curWindowStart} curWindowEnd=${wit.curWindowEnd} tsReader=$tsReader " +
             s"timestampVectorLength=${tsReader.length(nextInfo.getTsVectorAccessor, nextInfo.getTsVectorAddr)} " +
             s"valueVectorLength=${valReader.length(nextInfo.getValueVectorAccessor, nextInfo.getValueVectorAddr)} " +
-            s"partition ${rv.partition.stringPartition} " +
+            s"partition ${rv.partition.stringTsKey} " +
             s"start=$start end=$end step=$step", e)
           throw e
       }

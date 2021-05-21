@@ -31,7 +31,7 @@ with BeforeAndAfter with BeforeAndAfterAll with ScalaFutures {
   def colStore: ColumnStore
   def metaStore: MetaStore
   val policy = new FixedMaxPartitionsEvictionPolicy(100)
-  val schemas = Schemas(dataset.schema.partition,
+  val schemas = Schemas(dataset.schema.timeseries,
                         Map(dataset.name -> dataset.schema))  // Since 99 GDELT rows, this will never evict
   val memStore = new TimeSeriesMemStore(config, colStore, metaStore, Some(policy))
 
@@ -50,7 +50,7 @@ with BeforeAndAfter with BeforeAndAfterAll with ScalaFutures {
     metaStore.clearAllData()
   }
 
-  val partScan = SinglePartitionScan(defaultPartKey, 0)
+  val partScan = SingleTimeseriesScan(defaultPartKey, 0)
 
   implicit val keyType = SingleKeyTypes.LongKeyType
 
@@ -102,11 +102,11 @@ with BeforeAndAfter with BeforeAndAfterAll with ScalaFutures {
     val paramSet = colStore.getScanSplits(dataset.ref, 1)
     paramSet should have length (1)
 
-    val rowIt = memStore.scanRows(dataset, Seq(0, 1, 2), FilteredPartitionScan(paramSet.head))
+    val rowIt = memStore.scanRows(dataset, Seq(0, 1, 2), FilteredTimeseriesScan(paramSet.head))
     rowIt.map(_.getLong(2)).toSeq should equal (Seq(24L, 28L, 25L, 40L, 39L, 29L))
 
     // check that can read from same partition again
-    val rowIt2 = memStore.scanRows(dataset, Seq(2), FilteredPartitionScan(paramSet.head))
+    val rowIt2 = memStore.scanRows(dataset, Seq(2), FilteredTimeseriesScan(paramSet.head))
     rowIt2.map(_.getLong(0)).toSeq should equal (Seq(24L, 28L, 25L, 40L, 39L, 29L))
   }
 
@@ -119,7 +119,7 @@ with BeforeAndAfter with BeforeAndAfterAll with ScalaFutures {
     paramSet should have length (1)
 
     val rowIt = memStore.scanRows(dataset2, schema2.colIDs("NumArticles").get,
-                                  FilteredPartitionScan(paramSet.head))
+                                  FilteredTimeseriesScan(paramSet.head))
     rowIt.map(_.getInt(0)).sum should equal (492)
   }
 
@@ -135,7 +135,7 @@ with BeforeAndAfter with BeforeAndAfterAll with ScalaFutures {
     paramSet should have length (1)
 
     val filter = ColumnFilter("MonthYear", Filter.Equals(197902))
-    val method = FilteredPartitionScan(paramSet.head, Seq(filter))
+    val method = FilteredTimeseriesScan(paramSet.head, Seq(filter))
     val rowIt = memStore.scanRows(dataset2, schema2.colIDs("NumArticles").get, method)
     rowIt.map(_.getInt(0)).sum should equal (22)
   }
@@ -152,7 +152,7 @@ with BeforeAndAfter with BeforeAndAfterAll with ScalaFutures {
     paramSet should have length (1)
 
     val filter = ColumnFilter("MonthYear", Filter.Equals(197902))
-    val method = FilteredPartitionScan(paramSet.head, Seq(filter))
+    val method = FilteredTimeseriesScan(paramSet.head, Seq(filter))
     val lookupRes = memStore.lookupPartitions(dataset2.ref, method, AllChunkScan,
       querySession = QuerySession.makeForTestingOnly)
     val rangeVectorObs = memStore.rangeVectors(dataset2.ref, lookupRes, schema2.colIDs("NumArticles").get,

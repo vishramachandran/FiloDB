@@ -42,7 +42,7 @@ class PrometheusInputRecordSpec extends AnyFunSpec with Matchers {
 
     record1.addToBuilder(builder)
     builder.allContainers.head.foreach { case (base, offset) =>
-      schema.ingestionSchema.partitionHash(base, offset) should not equal (7)
+      schema.ingestionSchema.tsHash(base, offset) should not equal (7)
       schema.ingestionSchema.getLong(base, offset, 0) shouldEqual 1000000L
       schema.ingestionSchema.getDouble(base, offset, 1) shouldEqual 1.1
       schema.ingestionSchema.asJavaString(base, offset, 2) shouldEqual "num_partitions"
@@ -56,8 +56,8 @@ class PrometheusInputRecordSpec extends AnyFunSpec with Matchers {
   it("should be able to change the name of predefined tag and be able to read old part keys with new tag") {
     val builder = new RecordBuilder(MemFactory.onHeapFactory)
     val oldSchema = Schemas.promCounter.copy(
-      partition = Schemas.promCounter.partition.copy(
-        predefinedKeys = Schemas.promCounter.partition.predefinedKeys.updated(9, "_step_")))
+      timeseries = Schemas.promCounter.timeseries.copy(
+        predefinedKeys = Schemas.promCounter.timeseries.predefinedKeys.updated(9, "_step_")))
 
     val records = Seq(new MetricTagInputRecord(
       Seq[Any](1000000L, 1.1d),
@@ -75,7 +75,7 @@ class PrometheusInputRecordSpec extends AnyFunSpec with Matchers {
 
     record1.addToBuilder(builder)
     builder.allContainers.head.foreach { case (base, offset) =>
-      schema.ingestionSchema.partitionHash(base, offset) should not equal (7)
+      schema.ingestionSchema.tsHash(base, offset) should not equal (7)
       schema.ingestionSchema.getLong(base, offset, 0) shouldEqual 1000000L
       schema.ingestionSchema.getDouble(base, offset, 1) shouldEqual 1.1d
       schema.ingestionSchema.asJavaString(base, offset, 2) shouldEqual "num_partitions"

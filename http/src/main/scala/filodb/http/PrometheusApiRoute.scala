@@ -99,7 +99,7 @@ class PrometheusApiRoute(nodeCoord: ActorRef, settings: HttpSettings)(implicit a
                                            ErrorResponse("badQuery", s"Dataset $dataset is not registered"))
               case Some(a: Any)      => throw new IllegalStateException(s"Got $a as query response")
               case None              => val promQrs = qr.asInstanceOf[Seq[filodb.query.QueryResult]].map { r =>
-                                          convertHistToPromResult(r, schemas.part)
+                                          convertHistToPromResult(r, schemas.ts)
                                         }
                                         val rrBytes = toPromReadResponse(promQrs)
                                         // Would have ideally liked to have the encoding driven by akka directives,
@@ -125,7 +125,7 @@ class PrometheusApiRoute(nodeCoord: ActorRef, settings: HttpSettings)(implicit a
       LogicalPlan2Query(DatasetRef.fromDotString(dataset), logicalPlan, QueryContext(tsdbQueryParams, spreadProvider))
     }
     onSuccess(asyncAsk(nodeCoord, command, settings.queryAskTimeout)) {
-      case qr: QueryResult => val translated = if (histMap) qr else convertHistToPromResult(qr, schemas.part)
+      case qr: QueryResult => val translated = if (histMap) qr else convertHistToPromResult(qr, schemas.ts)
                               complete(toPromSuccessResponse(translated, verbose))
       case qr: QueryError => complete(toPromErrorResponse(qr))
       case qr: ExecPlan => complete(toPromExplainPlanResponse(qr))

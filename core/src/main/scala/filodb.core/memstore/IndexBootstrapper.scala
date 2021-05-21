@@ -25,7 +25,7 @@ class IndexBootstrapper(colStore: ColumnStore) {
     * @param assignPartId the function to invoke to get the partitionId to be used to populate the index record
     * @return number of updated records
     */
-  def bootstrapIndexRaw(index: PartKeyLuceneIndex,
+  def bootstrapIndexRaw(index: TimeSeriesKeyTagValueLuceneIndex,
                         shardNum: Int,
                         ref: DatasetRef)
                        (assignPartId: PartKeyRecord => Int): Task[Long] = {
@@ -53,9 +53,9 @@ class IndexBootstrapper(colStore: ColumnStore) {
    * Not doing this in raw cluster since parallel TimeSeriesPartition
    * creation requires more careful contention analysis
    */
-  def bootstrapIndexDownsample(index: PartKeyLuceneIndex,
-                     shardNum: Int,
-                     ref: DatasetRef)
+  def bootstrapIndexDownsample(index: TimeSeriesKeyTagValueLuceneIndex,
+                               shardNum: Int,
+                               ref: DatasetRef)
                     (assignPartId: PartKeyRecord => Int): Task[Long] = {
 
     val recoverIndexLatency = Kamon.gauge("shard-recover-index-latency", MeasurementUnit.time.milliseconds)
@@ -87,13 +87,13 @@ class IndexBootstrapper(colStore: ColumnStore) {
     * @return number of records refreshed
     */
   def refreshWithDownsamplePartKeys(
-                   index: PartKeyLuceneIndex,
-                   shardNum: Int,
-                   ref: DatasetRef,
-                   fromHour: Long,
-                   toHour: Long,
-                   schemas: Schemas,
-                   parallelism: Int = Runtime.getRuntime.availableProcessors())
+                                     index: TimeSeriesKeyTagValueLuceneIndex,
+                                     shardNum: Int,
+                                     ref: DatasetRef,
+                                     fromHour: Long,
+                                     toHour: Long,
+                                     schemas: Schemas,
+                                     parallelism: Int = Runtime.getRuntime.availableProcessors())
                    (lookUpOrAssignPartId: Array[Byte] => Int): Task[Long] = {
     val recoverIndexLatency = Kamon.gauge("downsample-store-refresh-index-latency",
       MeasurementUnit.time.milliseconds)

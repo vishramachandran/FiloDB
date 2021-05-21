@@ -70,11 +70,11 @@ class OdpSpec extends AnyFunSpec with Matchers with BeforeAndAfterAll with Scala
     val partBuilder = new RecordBuilder(offheapMem.nativeMemoryManager)
     val partKey = partBuilder.partKeyFromObjects(Schemas.gauge, gaugeName, seriesTags)
 
-    val part = new TimeSeriesPartition(0, Schemas.gauge, partKey,
+    val part = new TimeSeries(0, Schemas.gauge, partKey,
       0, offheapMem.bufferPools(Schemas.gauge.schemaHash), shardStats,
       offheapMem.nativeMemoryManager, 1)
 
-    gaugePartKeyBytes = part.partKeyBytes
+    gaugePartKeyBytes = part.tsKeyBytes
 
     val rawSamples = Stream.from(0).map { i =>
       Seq(firstSampleTime + i, i.toDouble, gaugeName, seriesTags)

@@ -14,7 +14,7 @@ case class TagPublishIntervalFinder(tagName: String) extends PublishIntervalFind
 
   override def findPublishIntervalMs(pkSchemaId: Int, pkBase: Any, pkOffset: Long): Option[Long] = {
     var result: Option[Long] = None
-    if (pkSchemaId == Schemas.global.part.hash) {
+    if (pkSchemaId == Schemas.global.ts.hash) {
       val consumer = new MapItemConsumer {
         override def consume(keyBase: Any, keyOffset: Long, valueBase: Any, valueOffset: Long, index: Int): Unit = {
           val isStepTag = UTF8StringShort.matchAt(keyBase, keyOffset, stepBase, stepOffset, 0)
@@ -24,7 +24,7 @@ case class TagPublishIntervalFinder(tagName: String) extends PublishIntervalFind
           }
         }
       }
-      Schemas.global.part.binSchema.consumeMapItems(pkBase, pkOffset, 1, consumer)
+      Schemas.global.ts.binSchema.consumeMapItems(pkBase, pkOffset, 1, consumer)
     }
     result
   }

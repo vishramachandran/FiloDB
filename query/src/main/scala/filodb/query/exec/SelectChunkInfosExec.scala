@@ -49,7 +49,7 @@ final case class SelectChunkInfosExec(queryContext: QueryContext,
       querySession.resultCouldBePartial = true
       querySession.partialResultsReason = Some("Result may be partial since some shards are still bootstrapping")
     }
-    val partMethod = FilteredPartitionScan(ShardSplit(shard), filters)
+    val partMethod = FilteredTimeseriesScan(ShardSplit(shard), filters)
     val lookupRes = source.lookupPartitions(dataset, partMethod, chunkMethod, querySession)
 
     val schemas = source.schemas(dataset).get
@@ -63,11 +63,11 @@ final case class SelectChunkInfosExec(queryContext: QueryContext,
           .filter(_.hasChunks(chunkMethod))
           .map { partition =>
             source.stats.incrReadPartitions(1)
-            val subgroup = TimeSeriesShard.partKeyGroup(dataSchema.partKeySchema, partition.partKeyBase,
-                                                        partition.partKeyOffset, numGroups)
+            val subgroup = TimeSeriesShard.tsKeyGroup(dataSchema.tsKeySchema, partition.tsKeyBase,
+                                                        partition.tsKeyOffset, numGroups)
             val key = PartitionRangeVectorKey(Left(partition),
-                                                  dataSchema.partKeySchema, partCols, shard,
-                                                  subgroup, partition.partID, dataSchema.name)
+                                                  dataSchema.tsKeySchema, partCols, shard,
+                                                  subgroup, partition.tsId, dataSchema.name)
             ChunkInfoRangeVector(key, partition, chunkMethod, dataColumn)
           }
     ExecResult(rvs, Task.eval(ChunkInfosSchema))

@@ -8,7 +8,7 @@ import monix.execution.Scheduler
 import monix.reactive.Observable
 
 import filodb.core.{DatasetRef, Types}
-import filodb.core.memstore.PartLookupResult
+import filodb.core.memstore.TsLookupResult
 import filodb.core.memstore.ratelimit.CardinalityRecord
 import filodb.core.metadata.Schemas
 import filodb.core.query.{QueryConfig, QuerySession}
@@ -48,15 +48,15 @@ import filodb.query.QueryResponse
   */
 case class UnsupportedChunkSource() extends ChunkSource {
   def scanPartitions(ref: DatasetRef,
-                     iter: PartLookupResult,
+                     iter: TsLookupResult,
                      colIds: Seq[Types.ColumnId],
-                     querySession: QuerySession): Observable[ReadablePartition] =
+                     querySession: QuerySession): Observable[ReadableTimeSeries] =
     throw new UnsupportedOperationException("This operation is not supported")
 
   def lookupPartitions(ref: DatasetRef,
-                       partMethod: PartitionScanMethod,
+                       partMethod: TimeseriesScanMethod,
                        chunkMethod: ChunkScanMethod,
-                       querySession: QuerySession): PartLookupResult =
+                       querySession: QuerySession): TsLookupResult =
     throw new UnsupportedOperationException("This operation is not supported")
 
   override def groupsInDataset(dataset: DatasetRef): Int =
@@ -71,7 +71,7 @@ case class UnsupportedChunkSource() extends ChunkSource {
     throw new UnsupportedOperationException("This operation is not supported")
 
   override def readRawPartitions(ref: DatasetRef, maxChunkTime: Long,
-                                 partMethod: PartitionScanMethod,
+                                 tsMethod: TimeseriesScanMethod,
                                  chunkMethod: ChunkScanMethod): Observable[RawPartData] =
     throw new UnsupportedOperationException("This operation is not supported")
 

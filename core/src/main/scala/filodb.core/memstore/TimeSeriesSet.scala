@@ -23,8 +23,8 @@ import scala.{specialized => sp}
 
 import spire.syntax.all._
 
-import filodb.core.metadata.{PartitionSchema, Schema}
-import filodb.core.store.FiloPartition
+import filodb.core.metadata.{TimeSeriesSchema, Schema}
+import filodb.core.store.FiloTimeSeries
 import filodb.memory.BinaryRegionLarge
 
 /**
@@ -37,9 +37,9 @@ import filodb.memory.BinaryRegionLarge
  * When the type A is known (or the caller is specialized on A),
  * Set[A] will store the values in an unboxed array.
  */
-final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: Int) extends Serializable { lhs =>
+final class TimeSeriesSet(as: Array[FiloTimeSeries], bs: Array[Byte], n: Int, u: Int) extends Serializable { lhs =>
   // set machinery
-  var items: Array[FiloPartition] = as      // slots for items
+  var items: Array[FiloTimeSeries] = as      // slots for items
   var buckets: Array[Byte] = bs // buckets track defined/used slots
   var len: Int = n              // number of defined slots
   var used: Int = u             // number of used slots (used >= len)
@@ -62,7 +62,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    */
   override def equals(that: Any): Boolean =
     that match {
-      case that: PartitionSet =>
+      case that: TimeSeriesSet =>
         if (size != that.size) return false
         forall(that.apply)
       case _ =>
@@ -135,7 +135,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * On average, this is an O(1) operation; the (unlikely) worst-case
    * is O(n).
    */
-  final def apply(item: FiloPartition): Boolean = {
+  final def apply(item: FiloTimeSeries): Boolean = {
     @inline @tailrec def loop(i: Int, perturbation: Int): Boolean = {
       val j = i & mask
       val status = buckets(j)
@@ -163,7 +163,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * @param addFunc a no-arg function to create the FiloPartition if it cannot be found
    */
   final def getOrAddWithIngestBR(ingestBase: Any, ingestOffset: Long, s: Schema,
-                                 addFunc: => FiloPartition): FiloPartition = {
+                                 addFunc: => FiloTimeSeries): FiloTimeSeries = {
     getWithIngestBR(ingestBase, ingestOffset, s) match {
       case null =>
         val newItem = addFunc
@@ -176,20 +176,20 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
   /**
    * Returns the partition that matches the partition key in an ingest record, or NULL if it doesn't exist
    */
-  final def getWithIngestBR(ingestBase: Any, ingestOffset: Long, s: Schema): FiloPartition = {
-    @inline @tailrec def loop(i: Int, perturbation: Int): FiloPartition = {
+  final def getWithIngestBR(ingestBase: Any, ingestOffset: Long, s: Schema): FiloTimeSeries = {
+    @inline @tailrec def loop(i: Int, perturbation: Int): FiloTimeSeries = {
       val j = i & mask
       val status = buckets(j)
       if (status == 0) {
         null
       } else if (status == 3 &&
-                 s.comparator.partitionMatch(ingestBase, ingestOffset, null, items(j).partKeyOffset)) {
+                 s.comparator.partitionMatch(ingestBase, ingestOffset, null, items(j).tsKeyOffset)) {
         items(j)
       } else {
         loop((i << 2) + i + perturbation + 1, perturbation >> 5)
       }
     }
-    val i = s.ingestionSchema.partitionHash(ingestBase, ingestOffset) & 0x7fffffff
+    val i = s.ingestionSchema.tsHash(ingestBase, ingestOffset) & 0x7fffffff
     loop(i, i)
   }
 
@@ -197,20 +197,20 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * Searches for and returns Some(tsPartition) if a partition exists with a key matching the passed in
    * partition key BinaryRecord.  Otherwise, None is returned.
    */
-  final def getWithPartKeyBR(partBase: Any, partOffset: Long, p: PartitionSchema): Option[FiloPartition] = {
-    @inline @tailrec def loop(i: Int, perturbation: Int): Option[FiloPartition] = {
+  final def getWithTsKeyBR(partBase: Any, partOffset: Long, p: TimeSeriesSchema): Option[FiloTimeSeries] = {
+    @inline @tailrec def loop(i: Int, perturbation: Int): Option[FiloTimeSeries] = {
       val j = i & mask
       val status = buckets(j)
       if (status == 0) {
         None
       } else if (status == 3 &&
-                 BinaryRegionLarge.equals(partBase, partOffset, items(j).partKeyBase, items(j).partKeyOffset)) {
+                 BinaryRegionLarge.equals(partBase, partOffset, items(j).tsKeyBase, items(j).tsKeyOffset)) {
         Some(items(j))
       } else {
         loop((i << 2) + i + perturbation + 1, perturbation >> 5)
       }
     }
-    val i = p.binSchema.partitionHash(partBase, partOffset) & 0x7fffffff
+    val i = p.binSchema.tsHash(partBase, partOffset) & 0x7fffffff
     loop(i, i)
   }
 
@@ -222,7 +222,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation.
    */
-  final def copy(): PartitionSet = new PartitionSet(items.clone, buckets.clone, len, used)
+  final def copy(): TimeSeriesSet = new TimeSeriesSet(items.clone, buckets.clone, len, used)
 
   /**
    * Clears the set's internal state.
@@ -238,7 +238,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * This is an O(1) operation, but may generate a lot of garbage if
    * the set was previously large.
    */
-  final def clear(): Unit = { absorb(PartitionSet.empty()) }
+  final def clear(): Unit = { absorb(TimeSeriesSet.empty()) }
 
   /**
    * Aborb the given set's contents into this set.
@@ -251,7 +251,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * This is an O(1) operation, although it can potentially generate a
    * lot of garbage (if the set was previously large).
    */
-  private[this] def absorb(that: PartitionSet): Unit = {
+  private[this] def absorb(that: TimeSeriesSet): Unit = {
     items = that.items
     buckets = that.buckets
     len = that.len
@@ -263,7 +263,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
   /**
    * Synonym for +=.
    */
-  final def add(item: FiloPartition): Boolean = this += item
+  final def add(item: FiloTimeSeries): Boolean = this += item
 
   /**
    * Add item to the set.
@@ -274,7 +274,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * On average, this is an amortized O(1) operation; the worst-case
    * is O(n), which will occur when the set must be resized.
    */
-  def +=(item: FiloPartition): Boolean = {
+  def +=(item: FiloTimeSeries): Boolean = {
     @inline @tailrec def loop(i: Int, perturbation: Int): Boolean = {
       val j = i & mask
       val status = buckets(j)
@@ -305,7 +305,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is the size of items.
    */
-  def ++=(items: Iterable[FiloPartition]): Unit =
+  def ++=(items: Iterable[FiloTimeSeries]): Unit =
     items.foreach(this += _)
 
   /**
@@ -313,13 +313,13 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is the size of items.
    */
-  def ++=(arr: Array[FiloPartition]): Unit =
+  def ++=(arr: Array[FiloTimeSeries]): Unit =
     cfor(0)(_ < arr.length, _ + 1) { this += arr(_) }
 
   /**
    * Synonym for -=.
    */
-  def remove(item: FiloPartition): Boolean = this -= item
+  def remove(item: FiloTimeSeries): Boolean = this -= item
 
   /**
    * Remove an item from the set.
@@ -328,7 +328,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an amortized O(1) operation.
    */
-  final def -=(item: FiloPartition): Boolean = {
+  final def -=(item: FiloTimeSeries): Boolean = {
     @inline @tailrec def loop(i: Int, perturbation: Int): Boolean = {
       val j = i & mask
       val status = buckets(j)
@@ -352,7 +352,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * Like += and -= this is an amortized O(1) operation.
    */
-  final def update(item: FiloPartition, b: Boolean) =
+  final def update(item: FiloTimeSeries, b: Boolean) =
     if (b) this += item else this -= item
 
   /**
@@ -364,7 +364,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is the length of the buffer.
    */
-  def foreach(f: FiloPartition => Unit): Unit =
+  def foreach(f: FiloTimeSeries => Unit): Unit =
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3) f(items(i))
     }
@@ -377,7 +377,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is the size of the set.
    */
-  def map[@sp(Short, Char, Int, Float, Long, Double, AnyRef) B: ClassTag](f: FiloPartition => B): debox.Set[B] = {
+  def map[@sp(Short, Char, Int, Float, Long, Double, AnyRef) B: ClassTag](f: FiloTimeSeries => B): debox.Set[B] = {
     val out = debox.Set.ofSize[B](len)
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3) out.add(f(items(i)))
@@ -395,7 +395,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is the size of the set.
    */
-  def fold[@sp(Int, Long, Double, AnyRef) B](init: B)(f: (B, FiloPartition) => B): B = {
+  def fold[@sp(Int, Long, Double, AnyRef) B](init: B)(f: (B, FiloTimeSeries) => B): B = {
     var result = init
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3) result = f(result, items(i))
@@ -422,7 +422,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    */
   final def grow(): Unit = {
     val next = buckets.length * (if (buckets.length < 10000) 4 else 2)
-    val set = PartitionSet.ofAllocatedSize(next)
+    val set = TimeSeriesSet.ofAllocatedSize(next)
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3) set += items(i)
     }
@@ -443,7 +443,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * This is an O(n) operation, where n it the set's size.
    */
   final def compact(): Unit = {
-    val set = PartitionSet.ofSize(len)
+    val set = TimeSeriesSet.ofSize(len)
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3) set += items(i)
     }
@@ -469,7 +469,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is rhs.size.
    */
-  def |=(rhs: PartitionSet): Unit =
+  def |=(rhs: TimeSeriesSet): Unit =
     if (lhs.size >= rhs.size) {
       cfor(0)(_ < rhs.buckets.length, _ + 1) { i =>
         if (rhs.buckets(i) == 3) lhs += rhs.items(i)
@@ -483,7 +483,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
   /**
    * Synonym for |.
    */
-  def union(rhs: PartitionSet): PartitionSet = lhs | rhs
+  def union(rhs: TimeSeriesSet): TimeSeriesSet = lhs | rhs
 
   /**
    * Return new set which is the union of lhs and rhs.
@@ -493,7 +493,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * This is an O(m max n) operation, where m and n are the sizes of
    * the sets.
    */
-  def |(rhs: PartitionSet): PartitionSet =
+  def |(rhs: TimeSeriesSet): TimeSeriesSet =
     if (lhs.size >= rhs.size) {
       val out = lhs.copy
       out |= rhs
@@ -510,7 +510,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * This is an O(m min n) operation, where m and n are the sizes of
    * the lhs and rhs sets.
    */
-  def &=(rhs: PartitionSet): Unit =
+  def &=(rhs: TimeSeriesSet): Unit =
     if (lhs.size <= rhs.size) {
       cfor(0)(_ < buckets.length, _ + 1) { i =>
         if (buckets(i) == 3 && !rhs(items(i))) {
@@ -528,7 +528,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
   /**
    * Synonym for &.
    */
-  def intersection(rhs: PartitionSet): PartitionSet = this & rhs
+  def intersection(rhs: TimeSeriesSet): TimeSeriesSet = this & rhs
 
   /**
    * Intersect this set with the rhs set.
@@ -538,7 +538,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * This is an O(m min n) operation, where m and n are the sizes of
    * the lhs and rhs sets.
    */
-  def &(rhs: PartitionSet): PartitionSet =
+  def &(rhs: TimeSeriesSet): TimeSeriesSet =
     if (lhs.size <= rhs.size) {
       val out = lhs.copy
       out &= rhs
@@ -555,7 +555,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * This operation is an O(m min n) operation, where m and n are the
    * sizes of the lhs and rhs sets.
    */
-  def --=(rhs: PartitionSet): Unit =
+  def --=(rhs: TimeSeriesSet): Unit =
     if (lhs.size >= rhs.size) {
       cfor(0)(_ < rhs.buckets.length, _ + 1) { i =>
         if (rhs.buckets(i) == 3) lhs -= rhs.items(i)
@@ -573,14 +573,14 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
   /**
    * This is a synonym for --.
    */
-  def difference(rhs: PartitionSet): PartitionSet = lhs -- rhs
+  def difference(rhs: TimeSeriesSet): TimeSeriesSet = lhs -- rhs
 
   /**
    * Create a new set with the elements of lhs that are not in rhs.
    *
    * This is an O(n) operation, where n is the size of the set.
    */
-  def --(rhs: PartitionSet): PartitionSet = {
+  def --(rhs: TimeSeriesSet): TimeSeriesSet = {
     val out = lhs.copy
     out --= rhs
     out
@@ -591,7 +591,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is the size of the set.
    */
-  def count(p: FiloPartition => Boolean): Int =
+  def count(p: FiloTimeSeries => Boolean): Int =
     fold(0)((n, a) => if (p(a)) n + 1 else n)
 
   /**
@@ -601,7 +601,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * set. However, it will return as soon as a false result is
    * obtained.
    */
-  def forall(p: FiloPartition => Boolean): Boolean = {
+  def forall(p: FiloTimeSeries => Boolean): Boolean = {
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3 && !p(items(i))) return false
     }
@@ -615,7 +615,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * set. However, it will return as soon as a true result is
    * obtained.
    */
-  def exists(p: FiloPartition => Boolean): Boolean = {
+  def exists(p: FiloTimeSeries => Boolean): Boolean = {
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3 && p(items(i))) return true
     }
@@ -634,7 +634,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    * set. However, it will return as soon as a member satisfying the
    * predicate is found.
    */
-  def find(p: FiloPartition => Boolean): Option[FiloPartition] = {
+  def find(p: FiloTimeSeries => Boolean): Option[FiloTimeSeries] = {
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3) {
         val a = items(i)
@@ -650,8 +650,8 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is the size of the set.
    */
-  def findAll(p: FiloPartition => Boolean): PartitionSet = {
-    val out = PartitionSet.empty()
+  def findAll(p: FiloTimeSeries => Boolean): TimeSeriesSet = {
+    val out = TimeSeriesSet.empty()
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3 && p(items(i))) out += items(i)
     }
@@ -665,7 +665,7 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is the size of the set.
    */
-  def filterSelf(p: FiloPartition => Boolean): Unit =
+  def filterSelf(p: FiloTimeSeries => Boolean): Unit =
     cfor(0)(_ < buckets.length, _ + 1) { i =>
       if (buckets(i) == 3 && !p(items(i))) {
         items(i) = null // allow item to be garbage collected
@@ -687,13 +687,13 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * Creating the iterator is an O(1) operation.
    */
-  def iterator(): Iterator[FiloPartition] = {
+  def iterator(): Iterator[FiloTimeSeries] = {
     var i = 0
     while (i < buckets.length && buckets(i) != 3) i += 1
-    new Iterator[FiloPartition] {
+    new Iterator[FiloTimeSeries] {
       var index = i
       def hasNext: Boolean = index < buckets.length
-      def next: FiloPartition = {
+      def next: FiloTimeSeries = {
         val item = items(index)
         index += 1
         while (index < buckets.length && buckets(index) != 3) index += 1
@@ -720,11 +720,11 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * Creating the Iterable[A] instance is an O(1) operation.
    */
-  def toIterable(): Iterable[FiloPartition] =
-    new Iterable[FiloPartition] {
+  def toIterable(): Iterable[FiloTimeSeries] =
+    new Iterable[FiloTimeSeries] {
       override def size: Int = lhs.size
-      def iterator: Iterator[FiloPartition] = lhs.iterator
-      override def foreach[U](f: FiloPartition => U): Unit = lhs.foreach(a => f(a))
+      def iterator: Iterator[FiloTimeSeries] = lhs.iterator
+      override def foreach[U](f: FiloTimeSeries => U): Unit = lhs.foreach(a => f(a))
     }
 
   /**
@@ -735,17 +735,17 @@ final class PartitionSet(as: Array[FiloPartition], bs: Array[Byte], n: Int, u: I
    *
    * This is an O(n) operation, where n is the size of the set.
    */
-  def toScalaSet(): scala.collection.immutable.Set[FiloPartition] =
+  def toScalaSet(): scala.collection.immutable.Set[FiloTimeSeries] =
     iterator.toSet
 }
 
 
-object PartitionSet {
+object TimeSeriesSet {
   /**
    * Allocate an empty Set.
    */
-  def empty(): PartitionSet =
-    new PartitionSet(new Array[FiloPartition](8), new Array[Byte](8), 0, 0)
+  def empty(): TimeSeriesSet =
+    new TimeSeriesSet(new Array[FiloTimeSeries](8), new Array[Byte](8), 0, 0)
 
   /**
    * Allocate an empty Set, capable of holding n items without
@@ -754,7 +754,7 @@ object PartitionSet {
    * This method is useful if you know you'll be adding a large number
    * of elements in advance and you want to save a few resizes.
    */
-  def ofSize(n: Int): PartitionSet =
+  def ofSize(n: Int): TimeSeriesSet =
     ofAllocatedSize(n / 2 * 3)
 
   /**
@@ -764,12 +764,12 @@ object PartitionSet {
    * underlying array to be. In most cases ofSize() is probably what
    * you want instead.
    */
-  private def ofAllocatedSize(n: Int): PartitionSet = {
+  private def ofAllocatedSize(n: Int): TimeSeriesSet = {
     val sz = debox.Util.nextPowerOfTwo(n) match {
       case n if n < 0 => throw debox.DeboxOverflowError(n)
       case 0 => 8
       case n => n
     }
-    new PartitionSet(new Array[FiloPartition](sz), new Array[Byte](sz), 0, 0)
+    new TimeSeriesSet(new Array[FiloTimeSeries](sz), new Array[Byte](sz), 0, 0)
   }
 }

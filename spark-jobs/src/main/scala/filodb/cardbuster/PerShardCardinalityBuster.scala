@@ -74,7 +74,7 @@ class PerShardCardinalityBuster(dsSettings: DownsamplerSettings,
     candidateKeys.filter { pk =>
       val rawSchemaId = RecordSchema.schemaID(pk, UnsafeUtils.arayOffset)
       val schema = schemas(rawSchemaId)
-      val pkPairs = schema.partKeySchema.toStringPairs(pk, UnsafeUtils.arayOffset)
+      val pkPairs = schema.tsKeySchema.toStringPairs(pk, UnsafeUtils.arayOffset)
       val willDelete = deleteFilter.exists { filter => // at least one filter should match
         filter.forall { case (filterKey, filterValRegex) => // should match all tags in this filter
           pkPairs.exists { case (pkKey, pkVal) =>

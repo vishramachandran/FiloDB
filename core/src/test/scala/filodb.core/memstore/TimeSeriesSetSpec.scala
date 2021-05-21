@@ -9,16 +9,16 @@ import filodb.core.binaryrecord2.RecordBuilder
 import filodb.memory._
 import filodb.memory.format.UnsafeUtils
 
-class PartitionSetSpec extends MemFactoryCleanupTest with ScalaFutures {
+class TimeSeriesSetSpec extends MemFactoryCleanupTest with ScalaFutures {
   import MachineMetricsData._
-  import TimeSeriesPartitionSpec._
+  import TimeSeriesSpec._
 
   implicit override val patienceConfig = PatienceConfig(timeout = Span(2, Seconds), interval = Span(50, Millis))
 
   val config = ConfigFactory.load("application_test.conf").getConfig("filodb")
   val chunkRetentionHours = 72
 
-  var part: TimeSeriesPartition = null
+  var part: TimeSeries = null
 
   val reclaimer = new ReclaimListener {
     def onReclaim(metaAddr: Long, numBytes: Int): Unit = {
@@ -36,7 +36,7 @@ class PartitionSetSpec extends MemFactoryCleanupTest with ScalaFutures {
                                     dummyContext, true)
 
   val builder = new RecordBuilder(memFactory)
-  val partSet = PartitionSet.empty()
+  val partSet = TimeSeriesSet.empty()
 
   before {
     partSet.clear()
@@ -86,7 +86,7 @@ class PartitionSetSpec extends MemFactoryCleanupTest with ScalaFutures {
 
   it("should add new TSPartition if one doesnt exist with getOrAddWithIngestBR") {
     partSet.isEmpty shouldEqual true
-    partSet.getWithPartKeyBR(null, partKeyAddrs(0), schema2.partition) shouldEqual None
+    partSet.getWithTsKeyBR(null, partKeyAddrs(0), schema2.timeseries) shouldEqual None
     partSet.getWithIngestBR(null, ingestRecordAddrs(0), schema2) shouldEqual null
 
     val part = makePart(0, dataset2, partKeyAddrs(0), bufferPool)
@@ -95,18 +95,18 @@ class PartitionSetSpec extends MemFactoryCleanupTest with ScalaFutures {
     partSet.size shouldEqual 1
     partSet.isEmpty shouldEqual false
     got shouldEqual part
-    partSet.getWithPartKeyBR(null, partKeyAddrs(0), schema2.partition) shouldEqual Some(part)
+    partSet.getWithTsKeyBR(null, partKeyAddrs(0), schema2.timeseries) shouldEqual Some(part)
     partSet.getWithIngestBR(null, ingestRecordAddrs(0), schema2) shouldEqual part
   }
 
   it("should not add new TSPartition if function returns null") {
     partSet.isEmpty shouldEqual true
-    partSet.getWithPartKeyBR(null, partKeyAddrs(0), schema2.partition) shouldEqual None
+    partSet.getWithTsKeyBR(null, partKeyAddrs(0), schema2.timeseries) shouldEqual None
 
     val got = partSet.getOrAddWithIngestBR(null, ingestRecordAddrs(0), schema2, null)
     got shouldEqual null
     partSet.isEmpty shouldEqual true
-    partSet.getWithPartKeyBR(null, partKeyAddrs(0), schema2.partition) shouldEqual None
+    partSet.getWithTsKeyBR(null, partKeyAddrs(0), schema2.timeseries) shouldEqual None
   }
 
   it("should remove TSPartitions correctly") {

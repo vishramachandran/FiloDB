@@ -147,7 +147,7 @@ package object store {
      */
     def scanRows(dataset: Dataset,
                  columnIDs: Seq[ColumnId],
-                 partMethod: PartitionScanMethod,
+                 partMethod: TimeseriesScanMethod,
                  chunkMethod: ChunkScanMethod = AllChunkScan,
                  querySession: QuerySession = QuerySession.makeForTestingOnly): Iterator[RowReader] =
       source.scanPartitions(dataset.ref, columnIDs, partMethod, chunkMethod, querySession)

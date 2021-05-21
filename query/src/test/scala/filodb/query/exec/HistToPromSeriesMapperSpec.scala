@@ -32,7 +32,7 @@ class HistToPromSeriesMapperSpec extends AnyFunSpec with Matchers with ScalaFutu
     import NoCloseCursor._
     val rv = IteratorBackedRangeVector(rvKey, rows.toIterator, None)
 
-    val mapper = HistToPromSeriesMapper(MMD.histDataset.schema.partition)
+    val mapper = HistToPromSeriesMapper(MMD.histDataset.schema.timeseries)
     val sourceObs = Observable.now(rv)
 
     mapper.schema(sourceSchema).columns shouldEqual Seq(ColumnInfo("timestamp", ColumnType.TimestampColumn),
@@ -68,7 +68,7 @@ class HistToPromSeriesMapperSpec extends AnyFunSpec with Matchers with ScalaFutu
     import filodb.core.query.NoCloseCursor._
     val rv = IteratorBackedRangeVector(rvKey, (rows ++ tenRows).toIterator, None)
 
-    val mapper = HistToPromSeriesMapper(MMD.histDataset.schema.partition)
+    val mapper = HistToPromSeriesMapper(MMD.histDataset.schema.timeseries)
     val sourceObs = Observable.now(rv)
 
     mapper.schema(sourceSchema).columns shouldEqual Seq(ColumnInfo("timestamp", ColumnType.TimestampColumn),

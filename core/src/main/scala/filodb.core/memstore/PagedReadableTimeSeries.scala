@@ -10,7 +10,7 @@ import filodb.core.metadata.Schema
 import filodb.core.store._
 import filodb.memory.format.UnsafeUtils
 
-object PagedReadablePartition extends StrictLogging {
+object PagedReadableTimeSeries extends StrictLogging {
   val _log = logger
   val emptyByteBuffer = ByteBuffer.allocate(0)
 }
@@ -27,14 +27,14 @@ object PagedReadablePartition extends StrictLogging {
   *
   * @param colIds the colIds that need to be retained. Leave empty if all are needed.
   */
-class PagedReadablePartition(override val schema: Schema,
-                             override val shard: Int,
-                             override val partID: Int,
-                             partData: RawPartData,
-                             resolution: Option[Long],
-                             colIds: Seq[Types.ColumnId] = Seq.empty) extends ReadablePartition {
+class PagedReadableTimeSeries(override val schema: Schema,
+                              override val shard: Int,
+                              override val tsId: Int,
+                              partData: RawPartData,
+                              resolution: Option[Long],
+                              colIds: Seq[Types.ColumnId] = Seq.empty) extends ReadableTimeSeries {
 
-  import PagedReadablePartition._
+  import PagedReadableTimeSeries._
   val notNeededColIds = if (colIds.nonEmpty) schema.dataInfos.indices.toSet -- colIds.toSet
                         else Set.empty
   partData.chunkSetsTimeOrdered.foreach { vectors =>
@@ -61,11 +61,11 @@ class PagedReadablePartition(override val schema: Schema,
 
   override def earliestTime: Long = ???
 
-  def partKeyBase: Array[Byte] = partData.partitionKey
+  def tsKeyBase: Array[Byte] = partData.partitionKey
 
-  def partKeyOffset: Long = UnsafeUtils.arayOffset
+  def tsKeyOffset: Long = UnsafeUtils.arayOffset
 
-  override def partKeyBytes: Array[Byte] = partData.partitionKey
+  override def tsKeyBytes: Array[Byte] = partData.partitionKey
 
   private def chunkInfoIteratorImpl = {
     new ChunkInfoIterator {

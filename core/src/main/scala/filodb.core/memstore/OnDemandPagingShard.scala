@@ -32,7 +32,7 @@ class OnDemandPagingShard(ref: DatasetRef,
                           bufferMemoryManager: NativeMemoryManager,
                           rawStore: ColumnStore,
                           metastore: MetaStore,
-                          evictionPolicy: PartitionEvictionPolicy,
+                          evictionPolicy: TimeSeriesEvictionPolicy,
                           filodbConfig: Config)
                          (implicit ec: ExecutionContext) extends
 TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryManager, rawStore,
@@ -51,11 +51,11 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
     .tag("shard", shardNum)
     .start()
 
-  private def capDataScannedPerShardCheck(lookup: PartLookupResult): Unit = {
+  private def capDataScannedPerShardCheck(lookup: TsLookupResult): Unit = {
     lookup.firstSchemaId.foreach { schId =>
       lookup.chunkMethod match {
         case TimeRangeChunkScan(st, end) =>
-          val numMatches = lookup.partsInMemory.length + lookup.partIdsNotInMemory.length
+          val numMatches = lookup.tsInMemory.length + lookup.tsIdsNotInMemory.length
           schemas.ensureQueriedDataSizeWithinLimitApprox(schId, numMatches,
             storeConfig.flushInterval.toMillis,
             storeConfig.estimatedIngestResolutionMillis, end - st, storeConfig.maxDataPerShardQuery)
@@ -71,9 +71,9 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
   //  4. upload to memory and return partition
   // Definitely room for improvement, such as fetching multiple partitions at once, more parallelism, etc.
   //scalastyle:off
-  override def scanPartitions(partLookupRes: PartLookupResult,
+  override def scanPartitions(partLookupRes: TsLookupResult,
                               colIds: Seq[Types.ColumnId],
-                              querySession: QuerySession): Observable[ReadablePartition] = {
+                              querySession: QuerySession): Observable[ReadableTimeSeries] = {
 
     capDataScannedPerShardCheck(partLookupRes)
 
@@ -83,21 +83,21 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
     // 3. We don't have a safe way to prevent JVM crashes if someone reads a column that wasn't paged in
 
     // 1. Fetch partitions from memstore
-    val partIdsNotInMemory = partLookupRes.partIdsNotInMemory
+    val partIdsNotInMemory = partLookupRes.tsIdsNotInMemory
 
     // 2. Now determine list of partitions to ODP and the time ranges to ODP
     val partKeyBytesToPage = new ArrayBuffer[Array[Byte]]()
     val pagingMethods = new ArrayBuffer[ChunkScanMethod]
     val inMemOdp = debox.Set.empty[Int]
 
-    partLookupRes.partIdsMemTimeGap.foreach { case (pId, startTime) =>
-      val p = partitions.get(pId)
+    partLookupRes.tsIdsMemTimeGap.foreach { case (pId, startTime) =>
+      val p = tsIdToTsMap.get(pId)
       if (p != null) {
         val odpChunkScan = chunksToODP(p, partLookupRes.chunkMethod, pagingEnabled, startTime)
         odpChunkScan.foreach { rawChunkMethod =>
           pagingMethods += rawChunkMethod // TODO: really determine range for all partitions
-          partKeyBytesToPage += p.partKeyBytes
-          inMemOdp += p.partID
+          partKeyBytesToPage += p.tsKeyBytes
+          inMemOdp += p.tsId
         }
       } else {
         // in the very rare case that partition literally *just* got evicted
@@ -107,11 +107,11 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
       }
     }
     logger.debug(s"Query on dataset=$ref shard=$shardNum resulted in partial ODP of partIds ${inMemOdp}, " +
-      s"and full ODP of partIds ${partLookupRes.partIdsNotInMemory}")
+      s"and full ODP of partIds ${partLookupRes.tsIdsNotInMemory}")
 
     // partitions that do not need ODP are those that are not in the inMemOdp collection
-    val inMemParts = InMemPartitionIterator2(partLookupRes.partsInMemory)
-    val noOdpPartitions = inMemParts.filterNot(p => inMemOdp(p.partID))
+    val inMemParts = InMemTimeSeriesIterator2(partLookupRes.tsInMemory)
+    val noOdpPartitions = inMemParts.filterNot(p => inMemOdp(p.tsId))
 
     // NOTE: multiPartitionODP mode does not work with AllChunkScan and unit tests; namely missing partitions will not
     // return data that is in memory.  TODO: fix
@@ -119,13 +119,13 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
       if (storeConfig.multiPartitionODP) {
         Observable.fromTask(odpPartTask(partIdsNotInMemory, partKeyBytesToPage, pagingMethods,
                                         partLookupRes.chunkMethod)).flatMap { odpParts =>
-          val multiPart = MultiPartitionScan(partKeyBytesToPage, shardNum)
+          val multiPart = MultiTimeseriesScan(partKeyBytesToPage, shardNum)
           if (partKeyBytesToPage.nonEmpty) {
             val span = startODPSpan()
             rawStore.readRawPartitions(ref, maxChunkTime, multiPart, computeBoundingMethod(pagingMethods))
               // NOTE: this executes the partMaker single threaded.  Needed for now due to concurrency constraints.
               // In the future optimize this if needed.
-              .mapAsync { rawPart => partitionMaker.populateRawChunks(rawPart).executeOn(singleThreadPool) }
+              .mapAsync { rawPart => odpChunkStore.populateRawChunks(rawPart).executeOn(singleThreadPool) }
               .asyncBoundary(strategy) // This is needed so future computations happen in a different thread
               .doOnTerminate(ex => span.finish())
           } else { Observable.empty }
@@ -134,20 +134,20 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
         Observable.fromTask(odpPartTask(partIdsNotInMemory, partKeyBytesToPage, pagingMethods,
                                         partLookupRes.chunkMethod)).flatMap { odpParts =>
           assertThreadName(QuerySchedName)
-          logger.debug(s"Finished creating full ODP partitions ${odpParts.map(_.partID)}")
+          logger.debug(s"Finished creating full ODP partitions ${odpParts.map(_.tsId)}")
           if(logger.underlying.isDebugEnabled) {
             partKeyBytesToPage.zip(pagingMethods).foreach { case (pk, method) =>
-              logger.debug(s"Paging in chunks for partId=${getPartition(pk).get.partID} chunkMethod=$method")
+              logger.debug(s"Paging in chunks for partId=${getTimeSeries(pk).get.tsId} chunkMethod=$method")
             }
           }
           if (partKeyBytesToPage.nonEmpty) {
             val span = startODPSpan()
             Observable.fromIterable(partKeyBytesToPage.zip(pagingMethods))
               .mapAsync(storeConfig.demandPagingParallelism) { case (partBytes, method) =>
-                rawStore.readRawPartitions(ref, maxChunkTime, SinglePartitionScan(partBytes, shardNum), method)
-                  .mapAsync { rawPart => partitionMaker.populateRawChunks(rawPart).executeOn(singleThreadPool) }
+                rawStore.readRawPartitions(ref, maxChunkTime, SingleTimeseriesScan(partBytes, shardNum), method)
+                  .mapAsync { rawPart => odpChunkStore.populateRawChunks(rawPart).executeOn(singleThreadPool) }
                   .asyncBoundary(strategy) // This is needed so future computations happen in a different thread
-                  .defaultIfEmpty(getPartition(partBytes).get)
+                  .defaultIfEmpty(getTimeSeries(partBytes).get)
                   .headL
                   // headL since we are fetching a SinglePartition above
               }
@@ -159,7 +159,7 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
       }
     }
     result.map { p =>
-      shardStats.partitionsQueried.increment()
+      shardStats.numTsQueried.increment()
       p
     }
   }
@@ -173,7 +173,7 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
       partKeyBytesToPage += pkBytes
       pagingMethods += chunkMethod
       logger.debug(s"Finished creating part for full odp. Now need to page partId=$pId chunkMethod=$chunkMethod")
-      shardStats.partitionsRestored.increment()
+      shardStats.numTsRestored.increment()
     }).executeOn(ingestSched).asyncBoundary
     // asyncBoundary above will cause subsequent map operations to run on designated scheduler for task or observable
     // as opposed to ingestSched
@@ -187,41 +187,41 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
    * It runs in ingestion thread so it can correctly verify which ones to actually create or not
    */
   private def createODPPartitionsTask(partIDs: Buffer[Int], callback: (Int, Array[Byte]) => Unit):
-                                                                  Task[Seq[TimeSeriesPartition]] = Task {
+                                                                  Task[Seq[TimeSeries]] = Task {
     assertThreadName(IngestSchedName)
     require(partIDs.nonEmpty)
     partIDs.map { id =>
       // for each partID: look up in partitions
-      partitions.get(id) match {
-        case TimeSeriesShard.OutOfMemPartition =>
+      tsIdToTsMap.get(id) match {
+        case TimeSeriesShard.OutOfMemTs =>
           logger.debug(s"Creating TSPartition for ODP from part ID $id in dataset=$ref shard=$shardNum")
           // If not there, then look up in Lucene and get the details
-          for { partKeyBytesRef <- partKeyIndex.partKeyFromPartId(id)
-                unsafeKeyOffset = PartKeyLuceneIndex.bytesRefToUnsafeOffset(partKeyBytesRef.offset)
-                group = partKeyGroup(schemas.part.binSchema, partKeyBytesRef.bytes, unsafeKeyOffset, numGroups)
+          for { partKeyBytesRef <- tsKeyTagValueIndex.tsKeyFromTsId(id)
+                unsafeKeyOffset = TimeSeriesKeyTagValueLuceneIndex.bytesRefToUnsafeOffset(partKeyBytesRef.offset)
+                group = tsKeyGroup(schemas.ts.binSchema, partKeyBytesRef.bytes, unsafeKeyOffset, numGroups)
                 sch  <- Option(schemas(RecordSchema.schemaID(partKeyBytesRef.bytes, unsafeKeyOffset)))
                           } yield {
-            val part = createNewPartition(partKeyBytesRef.bytes, unsafeKeyOffset, group, id, sch, true, 4)
-            if (part == OutOfMemPartition) throw new ServiceUnavailableException("The server has too many ingesting " +
+            val part = createNewTimeSeries(partKeyBytesRef.bytes, unsafeKeyOffset, group, id, sch, true, 4)
+            if (part == OutOfMemTs) throw new ServiceUnavailableException("The server has too many ingesting " +
               "time series and does not have resources to serve this long time range query. Please try " +
               "after sometime.")
-            val stamp = partSetLock.writeLock()
+            val stamp = tsSetLock.writeLock()
               try {
                 markPartAsNotIngesting(part, odp = true)
-                partSet.add(part)
+                tsKeyToTs.add(part)
               } finally {
-                partSetLock.unlockWrite(stamp)
+                tsSetLock.unlockWrite(stamp)
               }
               val pkBytes = util.Arrays.copyOfRange(partKeyBytesRef.bytes, partKeyBytesRef.offset,
                 partKeyBytesRef.offset + partKeyBytesRef.length)
-              callback(part.partID, pkBytes)
+              callback(part.tsId, pkBytes)
               part
             }
           // create the partition and update data structures (but no need to add to Lucene!)
           // NOTE: if no memory, then no partition!
-        case p: TimeSeriesPartition =>
+        case p: TimeSeries =>
           // invoke callback even if we didn't create the partition
-          callback(p.partID, p.partKeyBytes)
+          callback(p.tsId, p.tsKeyBytes)
           Some(p)
       }
     }.toVector.flatten
@@ -243,7 +243,7 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
     * Check if ODP is really needed for this partition which is in memory
     * @return Some(scanMethodForCass) if ODP is needed, None if ODP is not needed
     */
-  private def chunksToODP(partition: ReadablePartition,
+  private def chunksToODP(partition: ReadableTimeSeries,
                           method: ChunkScanMethod,
                           enabled: Boolean,
                           partStartTime: Long): Option[ChunkScanMethod] = {
@@ -260,8 +260,8 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
                                                 if (req.startTime < memStartTime && partStartTime < memStartTime) {
                                                   val toODP = TimeRangeChunkScan(req.startTime, memStartTime)
                                                   logger.debug(s"Decided to ODP time range $toODP for " +
-                                                    s"partID=${partition.partID} memStartTime=$memStartTime " +
-                                                    s"shard=$shardNum ${partition.stringPartition}")
+                                                    s"partID=${partition.tsId} memStartTime=$memStartTime " +
+                                                    s"shard=$shardNum ${partition.stringTsKey}")
                                                   Some(toODP)
                                                 }
                                                 else None

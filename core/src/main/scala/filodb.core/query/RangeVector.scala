@@ -44,7 +44,7 @@ class SeqMapConsumer extends MapItemConsumer {
 /**
   * Range Vector Key backed by a BinaryRecord v2 partition key, which is basically a pointer to memory on or offheap.
   */
-final case class PartitionRangeVectorKey(partKeyData: Either[ReadablePartition, (Array[Byte], Long)],
+final case class PartitionRangeVectorKey(partKeyData: Either[ReadableTimeSeries, (Array[Byte], Long)],
                                          partSchema: RecordSchema,
                                          partKeyCols: Seq[ColumnInfo],
                                          sourceShard: Int,
@@ -52,11 +52,11 @@ final case class PartitionRangeVectorKey(partKeyData: Either[ReadablePartition, 
                                          partId: Int,
                                          schemaName: String) extends RangeVectorKey {
   def partBase: Array[Byte] = partKeyData match {
-    case Left(part) => part.partKeyBase
+    case Left(part) => part.tsKeyBase
     case Right((p, _)) => p
   }
   def partOffset: Long = partKeyData match {
-    case Left(part) => part.partKeyOffset
+    case Left(part) => part.tsKeyOffset
     case Right((_, off)) => off
   }
 
@@ -264,7 +264,7 @@ final case class DaysInMonthScalar(rangeParams: RangeParams) extends ScalarSingl
 
 // First column of columnIDs should be the timestamp column
 final case class RawDataRangeVector(key: RangeVectorKey,
-                                    partition: ReadablePartition,
+                                    partition: ReadableTimeSeries,
                                     chunkMethod: ChunkScanMethod,
                                     columnIDs: Array[Int],
                                     chunksQueriedMetric: Counter) extends RangeVector {
@@ -290,7 +290,7 @@ final case class RawDataRangeVector(key: RangeVectorKey,
   * @param column the Column to return detailed chunk info about, must be a DataColumn
   */
 final case class ChunkInfoRangeVector(key: RangeVectorKey,
-                                      partition: ReadablePartition,
+                                      partition: ReadableTimeSeries,
                                       chunkMethod: ChunkScanMethod,
                                       column: Column) extends RangeVector {
   val reader = new ChunkInfoRowReader(column)

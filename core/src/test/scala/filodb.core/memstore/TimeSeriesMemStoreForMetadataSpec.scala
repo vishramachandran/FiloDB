@@ -71,9 +71,9 @@ class TimeSeriesMemStoreForMetadataSpec extends AnyFunSpec with Matchers with Sc
     //Evict partition "0"
     val shard = memStore.getShardE(timeseriesDataset.ref, 0)
     val blockFactory = shard.blockFactoryPool.checkoutForOverflow(0)
-    val part = shard.partitions.get(0)
+    val part = shard.tsIdToTsMap.get(0)
     part.switchBuffers(blockFactory, encode = true)
-    shard.updatePartEndTimeInIndex(part, part.timestampOfLatestSample)
+    shard.updateTsEndTimeInIndex(part, part.timestampOfLatestSample)
     memStore.refreshIndexForTesting(timeseriesDataset.ref)
     val endTime = part.timestampOfLatestSample
     val startTime = part.earliestTime

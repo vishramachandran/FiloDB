@@ -94,7 +94,7 @@ class DSIndexJob(dsSettings: DownsamplerSettings,
     val pkRecords = partKeys.filter { pk =>
       val rawSchemaId = RecordSchema.schemaID(pk.partKey, UnsafeUtils.arayOffset)
       val schema = schemas(rawSchemaId)
-      val pkPairs = schema.partKeySchema.toStringPairs(pk.partKey, UnsafeUtils.arayOffset)
+      val pkPairs = schema.tsKeySchema.toStringPairs(pk.partKey, UnsafeUtils.arayOffset)
       val blocked = !dsSettings.isEligibleForDownsample(pkPairs)
       val hasDownsampleSchema = schema.downsample.isDefined
       if (blocked) numPartKeysBlocked.increment()
@@ -121,7 +121,7 @@ class DSIndexJob(dsSettings: DownsamplerSettings,
     */
   private def toDownsamplePkrWithHash(pkRecord: PartKeyRecord): PartKeyRecord = {
     val dsPartKey = RecordBuilder.buildDownsamplePartKey(pkRecord.partKey, schemas)
-    val hash = Option(schemas.part.binSchema.partitionHash(dsPartKey, UnsafeUtils.arayOffset))
+    val hash = Option(schemas.ts.binSchema.tsHash(dsPartKey, UnsafeUtils.arayOffset))
     PartKeyRecord(dsPartKey.get, pkRecord.startTime, pkRecord.endTime, hash)
   }
 }

@@ -2,34 +2,34 @@ package filodb.core.store
 
 import filodb.core.Types.{ChunkID, ColumnId}
 import filodb.core.metadata.Schema
-import filodb.core.query.{PartitionTimeRangeReader, RangeVectorCursor}
+import filodb.core.query.{RangeVectorCursor, TimeSeriesTimeRangeReader}
 import filodb.memory.format.{BinaryVector, MemoryReader, UnsafeUtils, VectorDataReader}
 
 
-trait FiloPartition {
+trait FiloTimeSeries {
   def schema: Schema
-  def partKeyBase: Array[Byte]
-  def partKeyOffset: Long
-  def partID: Int
+  def tsKeyBase: Array[Byte]
+  def tsKeyOffset: Long
+  def tsId: Int
 
   /**
     * Two FiloPartitions are equal if they have the same partition key.  This test is used in various
     * data structures.
     */
-  override def hashCode: Int = schema.partKeySchema.partitionHash(partKeyBase, partKeyOffset)
+  override def hashCode: Int = schema.tsKeySchema.tsHash(tsKeyBase, tsKeyOffset)
 
   override def equals(other: Any): Boolean = other match {
     case UnsafeUtils.ZeroPointer => false
-    case f: FiloPartition => schema.partKeySchema.equals(partKeyBase, partKeyOffset, f.partKeyBase, f.partKeyOffset)
+    case f: FiloTimeSeries => schema.tsKeySchema.equals(tsKeyBase, tsKeyOffset, f.tsKeyBase, f.tsKeyOffset)
     case _: Any           => false
   }
 
 }
 
-class EmptyPartition(val schema: Schema,
-                     val partKeyBase: Array[Byte],
-                     val partKeyOffset: Long,
-                     val partID: Int) extends FiloPartition
+class EmptyTimeSeries(val schema: Schema,
+                      val tsKeyBase: Array[Byte],
+                      val tsKeyOffset: Long,
+                      val tsId: Int) extends FiloTimeSeries
 
 /**
  * An abstraction for a single partition of data, from which chunk pointers or rows can be read.
@@ -37,15 +37,15 @@ class EmptyPartition(val schema: Schema,
  * Optimized for low heap usage since there are millions of these.  Avoid adding any new fields unless the CPU
  * tradeoff calls for it.
  */
-trait ReadablePartition extends FiloPartition {
+trait ReadableTimeSeries extends FiloTimeSeries {
 
   // Returns string representation of partition key
-  def stringPartition: String = schema.partKeySchema.stringify(partKeyBase, partKeyOffset)
+  def stringTsKey: String = schema.tsKeySchema.stringify(tsKeyBase, tsKeyOffset)
 
   // Returns binary partition key as a new, copied byte array
-  def partKeyBytes: Array[Byte] = schema.partKeySchema.asByteArray(partKeyBase, partKeyOffset)
+  def tsKeyBytes: Array[Byte] = schema.tsKeySchema.asByteArray(tsKeyBase, tsKeyOffset)
 
-  def hexPartKey: String = schema.partKeySchema.toHexString(partKeyBase, partKeyOffset)
+  def hexTsKey: String = schema.tsKeySchema.toHexString(tsKeyBase, tsKeyOffset)
 
   def numChunks: Int
 
@@ -117,10 +117,10 @@ trait ReadablePartition extends FiloPartition {
    * @param columnIDs the column IDs to query
    */
   final def timeRangeRows(startTime: Long, endTime: Long, columnIDs: Array[ColumnId]): RangeVectorCursor =
-    new PartitionTimeRangeReader(this, startTime, endTime, infos(startTime, endTime), columnIDs)
+    new TimeSeriesTimeRangeReader(this, startTime, endTime, infos(startTime, endTime), columnIDs)
 
   final def timeRangeRows(method: ChunkScanMethod, columnIDs: Array[ColumnId]): RangeVectorCursor =
-    new PartitionTimeRangeReader(this, method.startTime, method.endTime, infos(method), columnIDs)
+    new TimeSeriesTimeRangeReader(this, method.startTime, method.endTime, infos(method), columnIDs)
 
   def publishInterval: Option[Long]
 }

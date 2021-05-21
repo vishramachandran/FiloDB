@@ -8,7 +8,7 @@ import kamon.Kamon
 import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll}
 
 import filodb.core.{MetricsTestData, QueryTimeoutException, TestData, MachineMetricsData => MMD}
-import filodb.core.memstore.{TimeSeriesPartition, TimeSeriesPartitionSpec, WriteBufferPool}
+import filodb.core.memstore.{TimeSeries, TimeSeriesSpec, WriteBufferPool}
 import filodb.core.query._
 import filodb.core.store.AllChunkScan
 import filodb.core.MachineMetricsData.defaultPartKey
@@ -154,7 +154,7 @@ trait RawDataWindowingSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
   // Creates a RawDataRangeVector using Prometheus time-value schema and a given chunk size etc.
   def timeValueRVPk(tuples: Seq[(Long, Double)],
                     partKey: NativePointer = defaultPartKey): RawDataRangeVector = {
-    val part = TimeSeriesPartitionSpec.makePart(0, timeseriesDatasetWithMetric, partKey, bufferPool = tsBufferPool)
+    val part = TimeSeriesSpec.makePart(0, timeseriesDatasetWithMetric, partKey, bufferPool = tsBufferPool)
     val readers = tuples.map { case (ts, d) => TupleRowReader((Some(ts), Some(d))) }
     readers.foreach { row => part.ingest(0, row, ingestBlockHolder, createChunkAtFlushBoundary = false,
       flushIntervalMillis = Option.empty, acceptDuplicateSamples = false) }
@@ -166,7 +166,7 @@ trait RawDataWindowingSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
 
   def timeValueRvDownsample(tuples: Seq[(Long, Double, Double, Double, Double, Double)],
                             colIds: Array[Int]): RawDataRangeVector = {
-    val part = TimeSeriesPartitionSpec.makePart(0, downsampleDataset, bufferPool = tsBufferPool2)
+    val part = TimeSeriesSpec.makePart(0, downsampleDataset, bufferPool = tsBufferPool2)
     val readers = tuples.map { case (ts, d1, d2, d3, d4, d5) =>
       TupleRowReader((Some(ts), Some(d1), Some(d2), Some(d3), Some(d4), Some(d5)))
     }
@@ -185,7 +185,7 @@ trait RawDataWindowingSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
 
   // Adds more Time-Value tuples to a RawRangeVector as a new chunk
   def addChunkToRV(rv: RawDataRangeVector, tuples: Seq[(Long, Double)]): Unit = {
-    val part = rv.partition.asInstanceOf[TimeSeriesPartition]
+    val part = rv.partition.asInstanceOf[TimeSeries]
     val startingNumChunks = part.numChunks
     val readers = tuples.map { case (ts, d) => TupleRowReader((Some(ts), Some(d))) }
     readers.foreach { row => part.ingest(0, row, ingestBlockHolder, createChunkAtFlushBoundary = false,

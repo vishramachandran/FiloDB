@@ -98,7 +98,7 @@ private[filodb] class CsvStream(csvReader: CSVReader,
                              }
 
   val schema = schemas.schemas.values.find { sch =>
-    val allCols = (sch.partition.columns ++ sch.data.columns).map(_.name).toSet
+    val allCols = (sch.timeseries.columns ++ sch.data.columns).map(_.name).toSet
     allCols.intersect(columnNames.toSet).size == columnNames.length
   }.get
 

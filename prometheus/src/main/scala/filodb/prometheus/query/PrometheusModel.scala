@@ -4,7 +4,7 @@ import remote.RemoteStorage._
 
 import filodb.core.GlobalConfig
 import filodb.core.metadata.Column.ColumnType
-import filodb.core.metadata.PartitionSchema
+import filodb.core.metadata.TimeSeriesSchema
 import filodb.core.query.{ColumnFilter, ColumnInfo, Filter, RangeVector, RangeVectorKey}
 import filodb.query.{QueryResult => FiloQueryResult, _}
 import filodb.query.AggregationOperator.Avg
@@ -18,7 +18,7 @@ object PrometheusModel {
   /**
    * If the result contains Histograms, automatically convert them to Prometheus vector-per-bucket output
    */
-  def convertHistToPromResult(qr: FiloQueryResult, sch: PartitionSchema): FiloQueryResult = {
+  def convertHistToPromResult(qr: FiloQueryResult, sch: TimeSeriesSchema): FiloQueryResult = {
     if (!qr.resultSchema.isEmpty && qr.resultSchema.columns(1).colType == ColumnType.HistogramColumn) {
       val mapper = HistToPromSeriesMapper(sch)
       val promVectors = qr.result.flatMap(mapper.expandVector)

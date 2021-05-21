@@ -81,7 +81,7 @@ class InfluxRecordSpec extends AnyFunSpec with Matchers {
       recordOpts(0).get.addToBuilder(builder)
       builder.allContainers.head.foreach { case (base, offset) =>
         RecordSchema.schemaID(base, offset) shouldEqual Schemas.promCounter.schemaHash
-        schema.ingestionSchema.partitionHash(base, offset) should not equal (7)
+        schema.ingestionSchema.tsHash(base, offset) should not equal (7)
         schema.ingestionSchema.getLong(base, offset, 0) shouldEqual 1536790212000L
         schema.ingestionSchema.getDouble(base, offset, 1) shouldEqual 0.0
 
@@ -100,7 +100,7 @@ class InfluxRecordSpec extends AnyFunSpec with Matchers {
       recordOpts2(0).get.addToBuilder(builder)
       builder.allContainers.head.foreach { case (base, offset) =>
         RecordSchema.schemaID(base, offset) shouldEqual Schemas.gauge.schemaHash
-        schema.ingestionSchema.partitionHash(base, offset) should not equal (7)
+        schema.ingestionSchema.tsHash(base, offset) should not equal (7)
         schema.ingestionSchema.getLong(base, offset, 0) shouldEqual 1536628260000L
         schema.ingestionSchema.getDouble(base, offset, 1) shouldEqual 5.0
 
@@ -127,7 +127,7 @@ class InfluxRecordSpec extends AnyFunSpec with Matchers {
       val ingSchema = Schemas.promHistogram.ingestionSchema
       builder.allContainers.head.foreach { case (base, offset) =>
         RecordSchema.schemaID(base, offset) shouldEqual Schemas.promHistogram.schemaHash
-        ingSchema.partitionHash(base, offset) should not equal (7)
+        ingSchema.tsHash(base, offset) should not equal (7)
 
         val consumer = new StringifyMapItemConsumer()
         ingSchema.consumeMapItems(base, offset, 5, consumer)

@@ -454,7 +454,7 @@ extends Iterator[ChunkSetInfoReader] {
           next.valueReader = rv.partition.chunkReader(rv.valueColID, next.valueVectorAccessor, next.valueVectorAddr)
         } catch {
           case m: MatchError =>
-            throw CorruptVectorException(next.tsVectorAddr, next.startTime, rv.partition.stringPartition,
+            throw CorruptVectorException(next.tsVectorAddr, next.startTime, rv.partition.stringTsKey,
               rv.partition.shard, m)
         }
         lastEndTime = Math.max(next.endTime, lastEndTime)

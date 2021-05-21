@@ -3,7 +3,7 @@ package filodb.core.downsample
 import com.typesafe.scalalogging.StrictLogging
 
 import filodb.core.binaryrecord2.RecordBuilder
-import filodb.core.memstore.{TimeSeriesPartition, TimeSeriesShardStats}
+import filodb.core.memstore.{TimeSeries, TimeSeriesShardStats}
 import filodb.core.metadata.Schema
 import filodb.core.store.ChunkInfoIterator
 import filodb.memory.MemFactory
@@ -59,7 +59,7 @@ class ShardDownsampler(datasetName: String,
     *
     * Typically called for each chunkset at encoding time.
     */
-  def populateDownsampleRecords(part: TimeSeriesPartition,
+  def populateDownsampleRecords(part: TimeSeries,
                                 chunksets: ChunkInfoIterator,
                                 records: Seq[DownsampleRecords]): Unit = {
     if (enabled) {
@@ -90,7 +90,7 @@ class ShardDownsampler(datasetName: String,
                 builder.addBlob(h.downsampleChunk(part, chunkset, startRowNum, endRowNum).serialize())
             }
             // add partKey finally
-            builder.addPartKeyRecordFields(part.partKeyBase, part.partKeyOffset, sourceSchema.partKeySchema)
+            builder.addPartKeyRecordFields(part.tsKeyBase, part.tsKeyOffset, sourceSchema.tsKeySchema)
             builder.endRecord(true)
             stats.downsampleRecordsCreated.increment()
             pStart += resolution

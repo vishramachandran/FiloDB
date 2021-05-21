@@ -28,13 +28,13 @@ import filodb.core.{concurrentCache, DatasetRef}
 import filodb.core.Types.PartitionKey
 import filodb.core.binaryrecord2.MapItemConsumer
 import filodb.core.metadata.Column.ColumnType.{MapColumn, StringColumn}
-import filodb.core.metadata.PartitionSchema
+import filodb.core.metadata.TimeSeriesSchema
 import filodb.core.query.{ColumnFilter, Filter}
 import filodb.core.query.Filter._
 import filodb.memory.{BinaryRegionLarge, UTF8StringMedium, UTF8StringShort}
 import filodb.memory.format.{UnsafeUtils, ZeroCopyUTF8String => UTF8Str}
 
-object PartKeyLuceneIndex {
+object TimeSeriesKeyTagValueLuceneIndex {
   final val PART_ID = "__partId__"
   final val START_TIME = "__startTime__"
   final val END_TIME = "__endTime__"
@@ -66,16 +66,16 @@ object PartKeyLuceneIndex {
 }
 
 final case class TermInfo(term: UTF8Str, freq: Int)
-final case class PartKeyLuceneIndexRecord(partKey: Array[Byte], startTime: Long, endTime: Long)
+final case class TsKeyLuceneIndexRecord(partKey: Array[Byte], startTime: Long, endTime: Long)
 
-class PartKeyLuceneIndex(ref: DatasetRef,
-                         schema: PartitionSchema,
-                         shardNum: Int,
-                         retentionMillis: Long, // only used to calculate fallback startTime
-                         diskLocation: Option[File] = None
+class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
+                                       schema: TimeSeriesSchema,
+                                       shardNum: Int,
+                                       retentionMillis: Long, // only used to calculate fallback startTime
+                                       diskLocation: Option[File] = None
                          ) extends StrictLogging {
 
-  import PartKeyLuceneIndex._
+  import TimeSeriesKeyTagValueLuceneIndex._
 
   val startTimeLookupLatency = Kamon.histogram("index-startTimes-for-odp-lookup-latency",
     MeasurementUnit.time.milliseconds)
@@ -108,7 +108,7 @@ class PartKeyLuceneIndex(ref: DatasetRef,
   config.setIndexSort(endTimeSort)
   private val indexWriter = new IndexWriter(mMapDirectory, config)
 
-  private val utf8ToStrCache = concurrentCache[UTF8Str, String](PartKeyLuceneIndex.MAX_STR_INTERN_ENTRIES)
+  private val utf8ToStrCache = concurrentCache[UTF8Str, String](TimeSeriesKeyTagValueLuceneIndex.MAX_STR_INTERN_ENTRIES)
 
   //scalastyle:off
   private val searcherManager = new SearcherManager(indexWriter, null)
@@ -180,7 +180,7 @@ class PartKeyLuceneIndex(ref: DatasetRef,
     */
   def partIdsEndedBefore(endedBefore: Long): debox.Buffer[Int] = {
     val collector = new PartIdCollector()
-    val deleteQuery = LongPoint.newRangeQuery(PartKeyLuceneIndex.END_TIME, 0, endedBefore)
+    val deleteQuery = LongPoint.newRangeQuery(TimeSeriesKeyTagValueLuceneIndex.END_TIME, 0, endedBefore)
 
     withNewSearcher(s => s.search(deleteQuery, collector))
     collector.result
@@ -316,11 +316,11 @@ class PartKeyLuceneIndex(ref: DatasetRef,
   private def partKeyString(partId: Int,
                             partKeyOnHeapBytes: Array[Byte],
                             partKeyBytesRefOffset: Int = 0): String = {
-    val partHash = schema.binSchema.partitionHash(partKeyOnHeapBytes, bytesRefToUnsafeOffset(partKeyBytesRefOffset))
+    val partHash = schema.binSchema.tsHash(partKeyOnHeapBytes, bytesRefToUnsafeOffset(partKeyBytesRefOffset))
     //scalastyle:off
     s"shard=$shardNum partId=$partId partHash=$partHash [${
-      TimeSeriesPartition
-        .partKeyString(schema, partKeyOnHeapBytes, bytesRefToUnsafeOffset(partKeyBytesRefOffset))
+      TimeSeries
+        .tsKeyString(schema, partKeyOnHeapBytes, bytesRefToUnsafeOffset(partKeyBytesRefOffset))
     }]"
     //scalastyle:on
   }
@@ -359,7 +359,7 @@ class PartKeyLuceneIndex(ref: DatasetRef,
     * Called when TSPartition needs to be created when on-demand-paging from a
     * partId that does not exist on heap
     */
-  def partKeyFromPartId(partId: Int): Option[BytesRef] = {
+  def tsKeyFromTsId(partId: Int): Option[BytesRef] = {
     val collector = new SinglePartKeyCollector()
     withNewSearcher(s => s.search(new TermQuery(new Term(PART_ID, partId.toString)), collector) )
     Option(collector.singleResult)
@@ -369,7 +369,7 @@ class PartKeyLuceneIndex(ref: DatasetRef,
     * Called when a document is updated with new endTime
     */
   def startTimeFromPartId(partId: Int): Long = {
-    val collector = new NumericDocValueCollector(PartKeyLuceneIndex.START_TIME)
+    val collector = new NumericDocValueCollector(TimeSeriesKeyTagValueLuceneIndex.START_TIME)
     withNewSearcher(s => s.search(new TermQuery(new Term(PART_ID, partId.toString)), collector))
     collector.singleResult
   }
@@ -400,7 +400,7 @@ class PartKeyLuceneIndex(ref: DatasetRef,
     * Called when a document is updated with new endTime
     */
   def endTimeFromPartId(partId: Int): Long = {
-    val collector = new NumericDocValueCollector(PartKeyLuceneIndex.END_TIME)
+    val collector = new NumericDocValueCollector(TimeSeriesKeyTagValueLuceneIndex.END_TIME)
     withNewSearcher(s => s.search(new TermQuery(new Term(PART_ID, partId.toString)), collector))
     collector.singleResult
   }
@@ -491,9 +491,9 @@ class PartKeyLuceneIndex(ref: DatasetRef,
     }
   }
 
-  def partIdsFromFilters(columnFilters: Seq[ColumnFilter],
-                         startTime: Long,
-                         endTime: Long): debox.Buffer[Int] = {
+  def tsIdsFromFilters(columnFilters: Seq[ColumnFilter],
+                       startTime: Long,
+                       endTime: Long): debox.Buffer[Int] = {
     val collector = new PartIdCollector() // passing zero for unlimited results
     searchFromFilters(columnFilters, startTime, endTime, collector)
     collector.result
@@ -501,7 +501,7 @@ class PartKeyLuceneIndex(ref: DatasetRef,
 
   def partKeyRecordsFromFilters(columnFilters: Seq[ColumnFilter],
                                 startTime: Long,
-                                endTime: Long): Seq[PartKeyLuceneIndexRecord] = {
+                                endTime: Long): Seq[TsKeyLuceneIndexRecord] = {
     val collector = new PartKeyRecordCollector()
     searchFromFilters(columnFilters, startTime, endTime, collector)
     collector.records
@@ -547,7 +547,7 @@ class PartKeyLuceneIndex(ref: DatasetRef,
     def handleMatch(partId: Int, candidate: BytesRef): Unit = {
       // we need an equals check because there can potentially be another partKey with additional tags
       if (schema.binSchema.equals(partKeyBase, partKeyOffset,
-        candidate.bytes, PartKeyLuceneIndex.bytesRefToUnsafeOffset(candidate.offset))) {
+        candidate.bytes, TimeSeriesKeyTagValueLuceneIndex.bytesRefToUnsafeOffset(candidate.offset))) {
         logger.debug(s"There is already a partId=$partId assigned for " +
           s"${schema.binSchema.stringify(partKeyBase, partKeyOffset)} in" +
           s" dataset=$ref shard=$shardNum")
@@ -564,7 +564,7 @@ class PartKeyLuceneIndex(ref: DatasetRef,
 class NumericDocValueCollector(docValueName: String) extends SimpleCollector {
 
   var docValue: NumericDocValues = _
-  var singleResult: Long = PartKeyLuceneIndex.NOT_FOUND
+  var singleResult: Long = TimeSeriesKeyTagValueLuceneIndex.NOT_FOUND
 
   // gets called for each segment
   override def doSetNextReader(context: LeafReaderContext): Unit = {
@@ -590,7 +590,7 @@ class SinglePartKeyCollector extends SimpleCollector {
 
   // gets called for each segment
   override def doSetNextReader(context: LeafReaderContext): Unit = {
-    partKeyDv = context.reader().getBinaryDocValues(PartKeyLuceneIndex.PART_KEY)
+    partKeyDv = context.reader().getBinaryDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_KEY)
   }
 
   // gets called for each matching document in current segment
@@ -608,11 +608,11 @@ class SinglePartKeyCollector extends SimpleCollector {
 class SinglePartIdCollector extends SimpleCollector {
 
   var partIdDv: NumericDocValues = _
-  var singleResult: Int = PartKeyLuceneIndex.NOT_FOUND
+  var singleResult: Int = TimeSeriesKeyTagValueLuceneIndex.NOT_FOUND
 
   // gets called for each segment
   override def doSetNextReader(context: LeafReaderContext): Unit = {
-    partIdDv = context.reader().getNumericDocValues(PartKeyLuceneIndex.PART_ID)
+    partIdDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_ID)
   }
 
   // gets called for each matching document in current segment
@@ -637,7 +637,7 @@ class SinglePartIdCollector extends SimpleCollector {
   */
 class TopKPartIdsCollector(limit: Int) extends Collector with StrictLogging {
 
-  import PartKeyLuceneIndex._
+  import TimeSeriesKeyTagValueLuceneIndex._
 
   var endTimeDv: NumericDocValues = _
   var partIdDv: NumericDocValues = _
@@ -698,7 +698,7 @@ class PartIdCollector extends SimpleCollector {
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
     //set the subarray of the numeric values for all documents in the context
-    partIdDv = context.reader().getNumericDocValues(PartKeyLuceneIndex.PART_ID)
+    partIdDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_ID)
   }
 
   override def collect(doc: Int): Unit = {
@@ -719,8 +719,8 @@ class PartIdStartTimeCollector extends SimpleCollector {
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
     //set the subarray of the numeric values for all documents in the context
-    partIdDv = context.reader().getNumericDocValues(PartKeyLuceneIndex.PART_ID)
-    startTimeDv = context.reader().getNumericDocValues(PartKeyLuceneIndex.START_TIME)
+    partIdDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_ID)
+    startTimeDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.START_TIME)
   }
 
   override def collect(doc: Int): Unit = {
@@ -735,7 +735,7 @@ class PartIdStartTimeCollector extends SimpleCollector {
 }
 
 class PartKeyRecordCollector extends SimpleCollector {
-  val records = new ArrayBuffer[PartKeyLuceneIndexRecord]
+  val records = new ArrayBuffer[TsKeyLuceneIndexRecord]
   private var partKeyDv: BinaryDocValues = _
   private var startTimeDv: NumericDocValues = _
   private var endTimeDv: NumericDocValues = _
@@ -743,9 +743,9 @@ class PartKeyRecordCollector extends SimpleCollector {
   override def needsScores(): Boolean = false
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
-    partKeyDv = context.reader().getBinaryDocValues(PartKeyLuceneIndex.PART_KEY)
-    startTimeDv = context.reader().getNumericDocValues(PartKeyLuceneIndex.START_TIME)
-    endTimeDv = context.reader().getNumericDocValues(PartKeyLuceneIndex.END_TIME)
+    partKeyDv = context.reader().getBinaryDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_KEY)
+    startTimeDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.START_TIME)
+    endTimeDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.END_TIME)
   }
 
   override def collect(doc: Int): Unit = {
@@ -753,7 +753,7 @@ class PartKeyRecordCollector extends SimpleCollector {
       val pkBytesRef = partKeyDv.binaryValue()
       // Gotcha! make copy of array because lucene reuses bytesRef for next result
       val pkBytes = util.Arrays.copyOfRange(pkBytesRef.bytes, pkBytesRef.offset, pkBytesRef.offset + pkBytesRef.length)
-      records += PartKeyLuceneIndexRecord(pkBytes, startTimeDv.longValue(), endTimeDv.longValue())
+      records += TsKeyLuceneIndexRecord(pkBytes, startTimeDv.longValue(), endTimeDv.longValue())
     } else {
       throw new IllegalStateException("This shouldn't happen since every document should have partIdDv and startTimeDv")
     }
@@ -768,8 +768,8 @@ class ActionCollector(action: (Int, BytesRef) => Unit) extends SimpleCollector {
   override def needsScores(): Boolean = false
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
-    partIdDv = context.reader().getNumericDocValues(PartKeyLuceneIndex.PART_ID)
-    partKeyDv = context.reader().getBinaryDocValues(PartKeyLuceneIndex.PART_KEY)
+    partIdDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_ID)
+    partKeyDv = context.reader().getBinaryDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_KEY)
   }
 
   override def collect(doc: Int): Unit = {

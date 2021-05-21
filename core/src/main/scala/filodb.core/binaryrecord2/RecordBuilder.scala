@@ -7,7 +7,7 @@ import org.agrona.DirectBuffer
 import spire.syntax.cfor._
 
 import filodb.core.binaryrecord2.RecordSchema.schemaID
-import filodb.core.metadata.{Column, DatasetOptions, PartitionSchema, Schema, Schemas}
+import filodb.core.metadata._
 import filodb.core.metadata.Column.ColumnType.{DoubleColumn, LongColumn, MapColumn, StringColumn}
 import filodb.core.query.ColumnInfo
 import filodb.memory._
@@ -134,7 +134,7 @@ class RecordBuilder(memFactory: MemFactory,
   final def startNewRecord(schema: Schema): Unit =
     startNewRecord(schema.ingestionSchema, schema.schemaHash)
 
-  final def startNewRecord(partSchema: PartitionSchema, schemaID: Int): Unit =
+  final def startNewRecord(partSchema: TimeSeriesSchema, schemaID: Int): Unit =
     startNewRecord(partSchema.binSchema, schemaID)
 
   /**
@@ -253,7 +253,7 @@ class RecordBuilder(memFactory: MemFactory,
       case _ => ???
     }
     // finally copy the partition hash over
-    recHash = partKeySchema.partitionHash(base, offset)
+    recHash = partKeySchema.tsHash(base, offset)
   }
 
   import Column.ColumnType._
@@ -296,7 +296,7 @@ class RecordBuilder(memFactory: MemFactory,
 
   // Really only for testing. Very slow.  Only for partition keys
   def partKeyFromObjects(schema: Schema, parts: Any*): Long =
-    addFromReader(SeqRowReader(parts.toSeq), schema.partKeySchema, schema.schemaHash)
+    addFromReader(SeqRowReader(parts.toSeq), schema.tsKeySchema, schema.schemaHash)
 
   /**
    * Sorts and adds keys and values from a map.  The easiest way to add a map to a BinaryRecord.

@@ -7,7 +7,7 @@ import monix.reactive.Observable
 import filodb.core._
 import filodb.core.memstore.{TimeSeriesMemStore}
 import filodb.core.metadata.Schemas
-import filodb.core.store.{FilteredPartitionScan, InMemoryChunkScan}
+import filodb.core.store.{FilteredTimeseriesScan, InMemoryChunkScan}
 import filodb.memory.format.UnsafeUtils
 
 /**
@@ -51,14 +51,14 @@ class MemstoreCassandraSinkSpec extends AllTablesTest {
     memStore.refreshIndexForTesting(dataset1.ref)
     // Verify data still in MemStore... all of it
     val splits = memStore.getScanSplits(dataset1.ref, 1)
-    val agg1 = memStore.scanRows(dataset1, Seq(1), FilteredPartitionScan(splits.head))
+    val agg1 = memStore.scanRows(dataset1, Seq(1), FilteredTimeseriesScan(splits.head))
                        .map(_.getDouble(0)).sum
     agg1 shouldEqual (1 to 100).map(_.toDouble).sum
 
     // Verify data is in Cassandra ... but only groups 0, 1 which has following partitions:
     // Series 3, Series 4, Series 8, Series 9
     val splits2 = columnStore.getScanSplits(dataset1.ref, 1)
-    val rawParts = columnStore.readRawPartitions(dataset1.ref, 1.hour.toMillis, FilteredPartitionScan(splits2.head))
+    val rawParts = columnStore.readRawPartitions(dataset1.ref, 1.hour.toMillis, FilteredTimeseriesScan(splits2.head))
                               .toListL.runAsync.futureValue
     val writtenNums = (5 to 95 by 10) ++ (6 to 96 by 10) ++ (8 to 98 by 10)
     // Cannot check the result, because FilteredPartitionScan() will be broken until indices are implemented
@@ -71,14 +71,14 @@ class MemstoreCassandraSinkSpec extends AllTablesTest {
 
     // Reclaim all blocks.  Then verify flushed partitions are not there anymore
     memStore.getShardE(dataset1.ref, 0).reclaimAllBlocksTestOnly()
-    val data1 = memStore.scanRows(dataset1, Seq(1), FilteredPartitionScan(splits.head), InMemoryChunkScan)
+    val data1 = memStore.scanRows(dataset1, Seq(1), FilteredTimeseriesScan(splits.head), InMemoryChunkScan)
                        .map(_.getDouble(0)).toSeq
     // 4 partitions were flushed and not in memory anymore (should be at least 60, but
     // ingestion-based flushing can flush a bit more)
     data1 should have length (62)
 
     // Re-read data in memstore.  Verify that on-demand paging will bring data back
-    val agg2 = memStore.scanRows(dataset1, Seq(1), FilteredPartitionScan(splits.head))
+    val agg2 = memStore.scanRows(dataset1, Seq(1), FilteredTimeseriesScan(splits.head))
                        .map(_.getDouble(0)).sum
     agg2 shouldEqual (1 to 100).map(_.toDouble).sum
   }

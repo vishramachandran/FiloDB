@@ -148,7 +148,7 @@ class NullColumnStore(implicit sched: Scheduler) extends ColumnStore with Strict
   override def shutdown(): Unit = {}
 
   def readRawPartitions(ref: DatasetRef, maxChunkTime: Long,
-                        partMethod: PartitionScanMethod,
+                        tsMethod: TimeseriesScanMethod,
                         chunkMethod: ChunkScanMethod = AllChunkScan): Observable[RawPartData] = Observable.empty
 
   override def getScanSplits(dataset: DatasetRef, splitsPerNode: Int): Seq[ScanSplit] = Seq.empty

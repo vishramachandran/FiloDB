@@ -51,12 +51,12 @@ extends RawToPartitionMaker with StrictLogging {
    * Stores raw chunks into offheap memory and populates chunks into partition
    */
   //scalastyle:off
-  def populateRawChunks(rawPartition: RawPartData): Task[ReadablePartition] = Task {
+  def populateRawChunks(rawPartition: RawPartData): Task[ReadableTimeSeries] = Task {
     FiloSchedulers.assertThreadName(FiloSchedulers.PopulateChunksSched)
     // Find the right partition given the partition key
-    tsShard.getPartition(rawPartition.partitionKey).map { tsPart =>
-      logger.debug(s"Populating paged chunks for shard=${tsShard.shardNum} partId=${tsPart.partID}")
-      tsShard.shardStats.partitionsPagedFromColStore.increment()
+    tsShard.getTimeSeries(rawPartition.partitionKey).map { tsPart =>
+      logger.debug(s"Populating paged chunks for shard=${tsShard.shardNum} partId=${tsPart.tsId}")
+      tsShard.shardStats.tsPagedFromColStore.increment()
       tsShard.shardStats.numChunksPagedIn.increment(rawPartition.chunkSetsTimeOrdered.size)
       // One chunkset at a time, load them into offheap and populate the partition
       // Populate newest chunk first so concurrent queries dont assume all data is populated in to chunk-map already
@@ -77,7 +77,7 @@ extends RawToPartitionMaker with StrictLogging {
               try {
                 copyToOffHeap(rawVectors, memFactory, chunkPtrs)
               } finally {
-                metaAddr = memFactory.endMetaSpan(writeMeta(_, tsPart.partID, infoBytes, chunkPtrs),
+                metaAddr = memFactory.endMetaSpan(writeMeta(_, tsPart.tsId, infoBytes, chunkPtrs),
                   tsPart.schema.data.blockMetaSize.toShort)
               }
             }
@@ -86,9 +86,9 @@ extends RawToPartitionMaker with StrictLogging {
             val inserted = tsPart.addChunkInfoIfAbsent(chunkID, infoAddr)
 
             logger.debug(s"Populating paged chunk into memory chunkId=$chunkID inserted=$inserted " +
-              s"partId=${tsPart.partID} shard=${tsShard.shardNum} ${tsPart.stringPartition}")
+              s"partId=${tsPart.tsId} shard=${tsShard.shardNum} ${tsPart.stringTsKey}")
             if (!inserted) {
-              logger.error(s"Chunks not copied to partId=${tsPart.partID} ${tsPart.stringPartition}, already has " +
+              logger.error(s"Chunks not copied to partId=${tsPart.tsId} ${tsPart.stringTsKey}, already has " +
                   s"chunk $chunkID. Chunk time range (${ChunkSetInfo.getStartTime(infoBytes)}, " +
                   s"${ChunkSetInfo.getEndTime(infoBytes)}) partition currentEarliestTime=${tsPart.earliestTime}")
             }

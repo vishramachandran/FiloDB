@@ -16,7 +16,7 @@ import filodb.core.store._
 import filodb.memory._
 import filodb.memory.format.{RowReader, TupleRowReader, UnsafeUtils}
 
-object TimeSeriesPartitionSpec {
+object TimeSeriesSpec {
   import BinaryRegion.NativePointer
   import MachineMetricsData._
 
@@ -30,15 +30,15 @@ object TimeSeriesPartitionSpec {
 
   def makePart(partNo: Int, dataset: Dataset,
                partKey: NativePointer = defaultPartKey,
-               bufferPool: WriteBufferPool = myBufferPool): TimeSeriesPartition = {
-    new TimeSeriesPartition(partNo, dataset.schema, partKey, 0, bufferPool,
+               bufferPool: WriteBufferPool = myBufferPool): TimeSeries = {
+    new TimeSeries(partNo, dataset.schema, partKey, 0, bufferPool,
           new TimeSeriesShardStats(dataset.ref, 0), memFactory, 40)
   }
 
   def tracingPart(partNo: Int, dataset: Dataset,
                partKey: NativePointer = defaultPartKey,
-               bufferPool: WriteBufferPool = myBufferPool): TimeSeriesPartition = {
-    new TracingTimeSeriesPartition(partNo, dataset.ref, dataset.schema, partKey, 0, bufferPool,
+               bufferPool: WriteBufferPool = myBufferPool): TimeSeries = {
+    new TracingTimeSeries(partNo, dataset.ref, dataset.schema, partKey, 0, bufferPool,
           new TimeSeriesShardStats(dataset.ref, 0), memFactory, 40)
   }
 }
@@ -46,13 +46,13 @@ object TimeSeriesPartitionSpec {
 trait MemFactoryCleanupTest extends AnyFunSpec with Matchers with BeforeAndAfter with BeforeAndAfterAll {
   override def afterAll(): Unit = {
     super.afterAll()
-    TimeSeriesPartitionSpec.memFactory.shutdown()
+    TimeSeriesSpec.memFactory.shutdown()
   }
 }
 
-class TimeSeriesPartitionSpec extends MemFactoryCleanupTest with ScalaFutures {
+class TimeSeriesSpec extends MemFactoryCleanupTest with ScalaFutures {
   import MachineMetricsData._
-  import TimeSeriesPartitionSpec._
+  import TimeSeriesSpec._
 
   implicit override val patienceConfig = PatienceConfig(timeout = Span(2, Seconds), interval = Span(50, Millis))
 
@@ -62,7 +62,7 @@ class TimeSeriesPartitionSpec extends MemFactoryCleanupTest with ScalaFutures {
   // implemented by concrete test sub class
   val colStore: ColumnStore = new NullColumnStore()
 
-  var part: TimeSeriesPartition = null
+  var part: TimeSeries = null
 
   val reclaimer = new ReclaimListener {
     def onReclaim(metaAddr: Long, numBytes: Int): Unit = {

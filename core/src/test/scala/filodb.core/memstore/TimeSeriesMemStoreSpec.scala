@@ -70,11 +70,11 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
 
     val minSet = rawData.map(_(1).asInstanceOf[Double]).toSet
     val split = memStore.getScanSplits(dataset1.ref, 1).head
-    val q = memStore.scanRows(dataset1, Seq(1), FilteredPartitionScan(split))
+    val q = memStore.scanRows(dataset1, Seq(1), FilteredTimeseriesScan(split))
     q.map(_.getDouble(0)).toSet should equal (minSet)
 
     // query the series name string column as well
-    val q2 = memStore.scanRows(dataset1, Seq(dataset1.partitionColumns.head.id), FilteredPartitionScan(split))
+    val q2 = memStore.scanRows(dataset1, Seq(dataset1.partitionColumns.head.id), FilteredTimeseriesScan(split))
     val partStrings = q2.map(_.filoUTF8String(0).toString).toSet
     val expectedStrings = rawData.map(_(5).asInstanceOf[String]).toSet
     partStrings shouldEqual expectedStrings
@@ -92,7 +92,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
 
     memStore.refreshIndexForTesting(dataset1.ref)
     val split = memStore.getScanSplits(dataset1.ref, 1).head
-    val agg1 = memStore.scanRows(dataset1, Seq(1), FilteredPartitionScan(split)).map(_.getDouble(0)).sum
+    val agg1 = memStore.scanRows(dataset1, Seq(1), FilteredTimeseriesScan(split)).map(_.getDouble(0)).sum
     agg1 shouldEqual (1 to 20).map(_.toDouble).sum
   }
 
@@ -104,7 +104,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     memStore.asInstanceOf[TimeSeriesMemStore].refreshIndexForTesting(dataset2.ref)
     val split = memStore.getScanSplits(dataset2.ref, 1).head
     val filter = ColumnFilter("n", Filter.Equals("2".utf8))
-    val agg1 = memStore.scanRows(dataset2, Seq(1), FilteredPartitionScan(split, Seq(filter))).map(_.getDouble(0)).sum
+    val agg1 = memStore.scanRows(dataset2, Seq(1), FilteredTimeseriesScan(split, Seq(filter))).map(_.getDouble(0)).sum
     agg1 shouldEqual (3 + 8 + 13 + 18)
   }
 
@@ -121,14 +121,14 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     val split = memStore.getScanSplits(histDataset.ref, 1).head
     val filter = ColumnFilter("dc", Filter.Equals("1".utf8))
     // check sums
-    val sums = memStore.scanRows(histDataset, Seq(2), FilteredPartitionScan(split, Seq(filter)))
+    val sums = memStore.scanRows(histDataset, Seq(2), FilteredTimeseriesScan(split, Seq(filter)))
                        .map(_.getLong(0)).toList
     sums shouldEqual Seq(data(1)(2).asInstanceOf[Long],
                          data(11)(2).asInstanceOf[Long],
                          data(21)(2).asInstanceOf[Long],
                          data(31)(2).asInstanceOf[Long])
 
-    val hists = memStore.scanRows(histDataset, Seq(3), FilteredPartitionScan(split, Seq(filter)))
+    val hists = memStore.scanRows(histDataset, Seq(3), FilteredTimeseriesScan(split, Seq(filter)))
                         .map(_.getHistogram(0))
     hists.zipWithIndex.foreach { case (h, i) =>
       h shouldEqual data(1 + 10*i)(3).asInstanceOf[LongHistogram]
@@ -153,7 +153,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
   it("should be able to handle nonexistent partition keys") {
     memStore.setup(dataset1.ref, schemas1, 0, TestData.storeConf)
 
-    val q = memStore.scanRows(dataset1, Seq(1), SinglePartitionScan(Array[Byte]()))
+    val q = memStore.scanRows(dataset1, Seq(1), SingleTimeseriesScan(Array[Byte]()))
     q.toBuffer.length should equal (0)
   }
 
@@ -164,12 +164,12 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
 
     val minSeries0 = data(0)(1).asInstanceOf[Double]
     val partKey0 = partKeyBuilder.partKeyFromObjects(schema1, data(0)(5))
-    val q = memStore.scanRows(dataset1, Seq(1), SinglePartitionScan(partKey0, 0))
+    val q = memStore.scanRows(dataset1, Seq(1), SingleTimeseriesScan(partKey0, 0))
     q.map(_.getDouble(0)).toSeq.head shouldEqual minSeries0
 
     val minSeries1 = data(1)(1).asInstanceOf[Double]
     val partKey1 = partKeyBuilder.partKeyFromObjects(schema1, "Series 1")
-    val q2 = memStore.scanRows(dataset1, Seq(1), SinglePartitionScan(partKey1, 0))
+    val q2 = memStore.scanRows(dataset1, Seq(1), SingleTimeseriesScan(partKey1, 0))
     q2.map(_.getDouble(0)).toSeq.head shouldEqual minSeries1
   }
 
@@ -181,7 +181,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
 
     val filter = ColumnFilter("series", Filter.Equals("Series 1".utf8))
     val split = memStore.getScanSplits(dataset1.ref, 1).head
-    val q2 = memStore.scanRows(dataset1, Seq(1), FilteredPartitionScan(split, Seq(filter)))
+    val q2 = memStore.scanRows(dataset1, Seq(1), FilteredTimeseriesScan(split, Seq(filter)))
     q2.map(_.getDouble(0)).toSeq should equal (Seq(2.0, 12.0))
   }
 
@@ -204,11 +204,11 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
       Set(("n", 0), ("series", 0), ("n", 1), ("series", 1)))
 
     val filter = ColumnFilter("n", Filter.Equals("2".utf8))
-    val agg1 = memStore.scanRows(dataset2, Seq(1), FilteredPartitionScan(splits.head, Seq(filter)))
+    val agg1 = memStore.scanRows(dataset2, Seq(1), FilteredTimeseriesScan(splits.head, Seq(filter)))
                        .map(_.getDouble(0)).sum
     agg1 shouldEqual (3 + 8 + 13 + 18)
 
-    val agg2 = memStore.scanRows(dataset2, Seq(1), FilteredPartitionScan(splits.last, Seq(filter)))
+    val agg2 = memStore.scanRows(dataset2, Seq(1), FilteredTimeseriesScan(splits.last, Seq(filter)))
                        .map(_.getDouble(0)).sum
     agg2 shouldEqual (3 + 9 + 15)
   }
@@ -237,7 +237,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     memStore.refreshIndexForTesting(dataset1.ref)
     // Try reading - should be able to read optimized chunks too
     val splits = memStore.getScanSplits(dataset1.ref, 1)
-    val agg1 = memStore.scanRows(dataset1, Seq(1), FilteredPartitionScan(splits.head))
+    val agg1 = memStore.scanRows(dataset1, Seq(1), FilteredTimeseriesScan(splits.head))
                        .map(_.getDouble(0)).sum
     agg1 shouldEqual ((1 to 100).map(_.toDouble).sum)
   }
@@ -249,7 +249,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     Thread sleep 1000
     val numPartKeysWritten = partKeysWritten
     val tsShard = memStore.asInstanceOf[TimeSeriesMemStore].getShard(dataset1.ref, 0).get
-    tsShard.dirtyPartitionsForIndexFlush.isEmpty shouldEqual true
+    tsShard.dirtyTimeSeriesForIndexFlush.isEmpty shouldEqual true
 
     val startTime1 = 10000
     val numSamples = 500
@@ -261,7 +261,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     memStore.ingestStream(dataset1.ref, 0, stream, s).futureValue
 
     partKeysWritten shouldEqual numPartKeysWritten + 10 // 10 set1 series started
-    0.until(10).foreach{i => tsShard.partitions.get(i).ingesting shouldEqual true}
+    0.until(10).foreach{i => tsShard.tsIdToTsMap.get(i).ingesting shouldEqual true}
     0.until(10).foreach{i => tsShard.activelyIngesting(i) shouldEqual true}
 
     val startTime2 = startTime1 + 1000 * numSamples
@@ -277,9 +277,9 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
 
     // 10 Set1 series started + 10 Set1 series ended + 10 Set2 series started
     partKeysWritten shouldEqual numPartKeysWritten + 30
-    0.until(10).foreach {i => tsShard.partitions.get(i).ingesting shouldEqual false}
+    0.until(10).foreach {i => tsShard.tsIdToTsMap.get(i).ingesting shouldEqual false}
     0.until(10).foreach {i => tsShard.activelyIngesting(i) shouldEqual false}
-    10.until(20).foreach {i => tsShard.partitions.get(i).ingesting shouldEqual true}
+    10.until(20).foreach {i => tsShard.tsIdToTsMap.get(i).ingesting shouldEqual true}
     10.until(20).foreach {i => tsShard.activelyIngesting(i) shouldEqual true}
 
     val startTime3 = startTime2 + 1000 * numSamples
@@ -296,9 +296,9 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     // 10 Set1 series started + 10 Set1 series ended + 10 Set2 series started + 10 set2 series ended +
     // 10 set1 series restarted
     partKeysWritten shouldEqual numPartKeysWritten + 50
-    0.until(10).foreach {i => tsShard.partitions.get(i).ingesting shouldEqual true}
+    0.until(10).foreach {i => tsShard.tsIdToTsMap.get(i).ingesting shouldEqual true}
     0.until(10).foreach {i => tsShard.activelyIngesting(i) shouldEqual true}
-    10.until(20).foreach {i => tsShard.partitions.get(i).ingesting shouldEqual false}
+    10.until(20).foreach {i => tsShard.tsIdToTsMap.get(i).ingesting shouldEqual false}
     10.until(20).foreach {i => tsShard.activelyIngesting(i) shouldEqual false}
   }
 
@@ -329,19 +329,19 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     val tsShard = memStore.asInstanceOf[TimeSeriesMemStore].getShard(dataset1.ref, 0).get
     tsShard.recoverIndex().futureValue
 
-    tsShard.partitions.size shouldEqual 1 // only ingesting partitions should be loaded into heap
-    tsShard.partKeyIndex.indexNumEntries shouldEqual 2 // all partitions should be added to index
-    tsShard.partitions.get(0) shouldEqual UnsafeUtils.ZeroPointer
-    tsShard.partitions.get(1).partKeyBytes shouldEqual pks(1)
-    tsShard.partitions.get(1).ingesting shouldEqual true
+    tsShard.tsIdToTsMap.size shouldEqual 1 // only ingesting partitions should be loaded into heap
+    tsShard.tsKeyTagValueIndex.indexNumEntries shouldEqual 2 // all partitions should be added to index
+    tsShard.tsIdToTsMap.get(0) shouldEqual UnsafeUtils.ZeroPointer
+    tsShard.tsIdToTsMap.get(1).tsKeyBytes shouldEqual pks(1)
+    tsShard.tsIdToTsMap.get(1).ingesting shouldEqual true
 
     // Entries should be in part key index
-    tsShard.partKeyIndex.startTimeFromPartId(0) shouldEqual 50
-    tsShard.partKeyIndex.startTimeFromPartId(1) shouldEqual 250
-    tsShard.partKeyIndex.endTimeFromPartId(0) shouldEqual 100
-    tsShard.partKeyIndex.endTimeFromPartId(1) shouldEqual Long.MaxValue
-    tsShard.partKeyIndex.partKeyFromPartId(0).get shouldEqual new BytesRef(pks(0))
-    tsShard.partKeyIndex.partKeyFromPartId(1).get shouldEqual new BytesRef(pks(1))
+    tsShard.tsKeyTagValueIndex.startTimeFromPartId(0) shouldEqual 50
+    tsShard.tsKeyTagValueIndex.startTimeFromPartId(1) shouldEqual 250
+    tsShard.tsKeyTagValueIndex.endTimeFromPartId(0) shouldEqual 100
+    tsShard.tsKeyTagValueIndex.endTimeFromPartId(1) shouldEqual Long.MaxValue
+    tsShard.tsKeyTagValueIndex.tsKeyFromTsId(0).get shouldEqual new BytesRef(pks(0))
+    tsShard.tsKeyTagValueIndex.tsKeyFromTsId(1).get shouldEqual new BytesRef(pks(1))
 
   }
 
@@ -355,14 +355,14 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     val filter = ColumnFilter("n", Filter.Equals("2".utf8))
 
     val range = TimeRangeChunkScan(105000L, 2000000L)
-    val res = memStore.lookupPartitions(dataset2.ref, FilteredPartitionScan(split, Seq(filter)), range,
+    val res = memStore.lookupPartitions(dataset2.ref, FilteredTimeseriesScan(split, Seq(filter)), range,
       QuerySession.makeForTestingOnly)
     res.firstSchemaId shouldEqual Some(schema2.schemaHash)
-    res.partsInMemory.length shouldEqual 2   // two partitions should match
+    res.tsInMemory.length shouldEqual 2   // two partitions should match
     res.shard shouldEqual 0
     res.chunkMethod shouldEqual range
-    res.partIdsMemTimeGap shouldEqual debox.Map(7 -> 107000L)
-    res.partIdsNotInMemory.isEmpty shouldEqual true
+    res.tsIdsMemTimeGap shouldEqual debox.Map(7 -> 107000L)
+    res.tsIdsNotInMemory.isEmpty shouldEqual true
   }
 
   import Iterators._
@@ -390,7 +390,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     // Should have less than 50 records ingested
     // Try reading - should be able to read optimized chunks too
     val splits = memStore.getScanSplits(dataset1.ref, 1)
-    val data1 = memStore.scanRows(dataset1, Seq(1), FilteredPartitionScan(splits.head))
+    val data1 = memStore.scanRows(dataset1, Seq(1), FilteredTimeseriesScan(splits.head))
                         .map(_.getDouble(0)).toSeq
     data1.length shouldEqual 47
   }
@@ -431,7 +431,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
   def markPartitionsForEviction(partIDs: Seq[Int]): Unit = {
     val shard = memStore.getShardE(dataset1.ref, 0)
     for { n <- partIDs } {
-      val part = shard.partitions.get(n)
+      val part = shard.tsIdToTsMap.get(n)
       shard.markPartAsNotIngesting(part, false)
     }
   }
@@ -462,19 +462,19 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     memStore.ingest(dataset1.ref, 0, data2)
     Thread sleep 1000    // see if this will make things pass sooner
 
-    shard.partitions.size() shouldEqual 1100
-    shard.addPartitionsDisabled() shouldEqual true
+    shard.tsIdToTsMap.size() shouldEqual 1100
+    shard.addTimeSeriesDisabled() shouldEqual true
 
     markPartitionsForEviction(10 until 20)
     shard.evictForHeadroom() shouldEqual true // this should evict only 10 partitions, but cannot reach headroom
     // but add of new partitions is enabled since we were able to evict some
-    shard.addPartitionsDisabled() shouldEqual false
-    shard.partitions.size() shouldEqual 1090
+    shard.addTimeSeriesDisabled() shouldEqual false
+    shard.tsIdToTsMap.size() shouldEqual 1090
 
     // fill the 10 slots remaining
     val data3 = records(dataset1, linearMultiSeries(numSeries = 1130).drop(1120).take(10))
     memStore.ingest(dataset1.ref, 0, data3)
-    shard.partitions.size() shouldEqual 1100
+    shard.tsIdToTsMap.size() shouldEqual 1100
 
     // now there is no room for any more partitions. Try ODP
     memStore.refreshIndexForTesting(dataset1.ref)
@@ -484,7 +484,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     val session = QuerySession.makeForTestingOnly()
     // ODP query should fail since there is no room
     val ex = intercept[TestFailedException] {
-      memStore.scanPartitions(dataset1.ref, Seq(0, 1), FilteredPartitionScan(split, Seq(filter)),
+      memStore.scanPartitions(dataset1.ref, Seq(0, 1), FilteredTimeseriesScan(split, Seq(filter)),
         querySession = session)
         .toListL.runAsync.futureValue
     }
@@ -497,7 +497,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     // ODP query should fail even though there is room for eviction
     // Reason is we dont want ODP cannibalism of partitions
     val ex2 = intercept[TestFailedException] {
-      memStore.scanPartitions(dataset1.ref, Seq(0, 1), FilteredPartitionScan(split, Seq(filter)),
+      memStore.scanPartitions(dataset1.ref, Seq(0, 1), FilteredTimeseriesScan(split, Seq(filter)),
         querySession = session)
         .toListL.runAsync.futureValue
     }
@@ -508,19 +508,19 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     shard.evictForHeadroom() shouldEqual true
 
     // now query should succeed
-    val parts = memStore.scanPartitions(dataset1.ref, Seq(0, 1), FilteredPartitionScan(split, Seq(filter)),
+    val parts = memStore.scanPartitions(dataset1.ref, Seq(0, 1), FilteredTimeseriesScan(split, Seq(filter)),
         querySession = session)
         .toListL.runAsync.futureValue
     parts.size shouldEqual 1
-    parts.head.partID shouldEqual 0 // same partId as before for ODPed partitions
+    parts.head.tsId shouldEqual 0 // same partId as before for ODPed partitions
     session.close() // release lock
-    shard.evictableOdpPartIds.size() shouldEqual 1
+    shard.evictableOdpTsIds.size() shouldEqual 1
 
     // mark some parts as evictable
     markPartitionsForEviction(21 until 25)
     shard.evictForHeadroom() shouldEqual true
     // odp partitions should be evicted first before regular partitions
-    shard.evictableOdpPartIds.size() shouldEqual 0
+    shard.evictableOdpTsIds.size() shouldEqual 0
 
   }
 
@@ -534,12 +534,12 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     memStore.ingest(dataset1.ref, 0, data)
     memStore.numPartitions(dataset1.ref, 0) shouldEqual 1000
 
-    val shard0Partitions = shard0.partitions
+    val shard0Partitions = shard0.tsIdToTsMap
     var part0 = shard0Partitions.get(0)
-    dataset1.partKeySchema.asJavaString(part0.partKeyBase, part0.partKeyOffset, 0) shouldEqual "Series 0"
-    val pkBytes = dataset1.partKeySchema.asByteArray(part0.partKeyBase, part0.partKeyOffset)
-    val pk = PartKey(pkBytes, UnsafeUtils.arayOffset)
-    shard0.evictedPartKeys.mightContain(pk) shouldEqual false
+    dataset1.partKeySchema.asJavaString(part0.tsKeyBase, part0.tsKeyOffset, 0) shouldEqual "Series 0"
+    val pkBytes = dataset1.partKeySchema.asByteArray(part0.tsKeyBase, part0.tsKeyOffset)
+    val pk = TsKey(pkBytes, UnsafeUtils.arayOffset)
+    shard0.evictedTsKeysBF.mightContain(pk) shouldEqual false
 
     // Purposely mark 100 partitions endTime as occurring a while ago to mark them eligible for eviction
     // We also need to switch buffers so that internally ingestionEndTime() is accurate
@@ -549,7 +549,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     shard0Partitions.get(0) shouldEqual null
 
     // bloom filter should contain the pk
-    shard0.evictedPartKeys.mightContain(pk) shouldEqual true
+    shard0.evictedTsKeysBF.mightContain(pk) shouldEqual true
     memStore.refreshIndexForTesting(dataset1.ref)
 
     // re-ingest partId 0
@@ -558,7 +558,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     Thread.sleep(1000)
 
     part0 = shard0Partitions.get(0)
-    part0.partID shouldEqual 0
+    part0.tsId shouldEqual 0
   }
 
   it("should return extra WriteBuffers to memoryManager properly") {
@@ -584,7 +584,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
       // Switch buffers, encode and release/return buffers for all partitions
       val blockFactory = shard.blockFactoryPool.checkoutForOverflow(0)
       for { n <- 0 until numSeries } {
-        val part = shard.partitions.get(n)
+        val part = shard.tsIdToTsMap.get(n)
         part.switchBuffers(blockFactory, encode = true)
       }
 

@@ -328,19 +328,19 @@ object CliMain extends FilodbClusterNode {
     val tags = exp.labelSelection.filterNot(_.label == "__name__").map(lm => (lm.label.utf8, lm.value.utf8)).toMap
     rb.partKeyFromObjects(schema, metricName.utf8, tags)
     rb.currentContainer.get.foreach { case (b, o) =>
-      println(schema.partKeySchema.toHexString(b, o).toLowerCase)
+      println(schema.tsKeySchema.toHexString(b, o).toLowerCase)
     }
   }
 
   def printPartKeyBrAsString(brHex: String): Unit = {
     val pkBytes = hexStringToByteArray(brHex)
-    val partSchema = Schemas.fromConfig(config).get.part
+    val partSchema = Schemas.fromConfig(config).get.ts
     println(partKeyBrAsString(brHex))
   }
 
   def partKeyBrAsString(brHex: String): String = {
     val pkBytes = hexStringToByteArray(brHex)
-    val partSchema = Schemas.fromConfig(config).get.part
+    val partSchema = Schemas.fromConfig(config).get.ts
     partSchema.binSchema.stringify(pkBytes)
   }
 

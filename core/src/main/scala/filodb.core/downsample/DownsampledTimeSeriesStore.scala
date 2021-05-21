@@ -93,9 +93,9 @@ extends MemStore with StrictLogging {
                                                        end, start, limit)).getOrElse(Iterator.empty)
 
   def lookupPartitions(ref: DatasetRef,
-                       partMethod: PartitionScanMethod,
+                       partMethod: TimeseriesScanMethod,
                        chunkMethod: ChunkScanMethod,
-                       querySession: QuerySession): PartLookupResult = {
+                       querySession: QuerySession): TsLookupResult = {
     val shard = datasets(ref).get(partMethod.shard)
 
     if (shard == UnsafeUtils.ZeroPointer) {
@@ -106,9 +106,9 @@ extends MemStore with StrictLogging {
   }
 
   def scanPartitions(ref: DatasetRef,
-                     lookupRes: PartLookupResult,
+                     lookupRes: TsLookupResult,
                      colIds: Seq[Types.ColumnId],
-                     querySession: QuerySession): Observable[ReadablePartition] = {
+                     querySession: QuerySession): Observable[ReadableTimeSeries] = {
     val shard = datasets(ref).get(lookupRes.shard)
 
     if (shard == UnsafeUtils.ZeroPointer) {
@@ -172,7 +172,7 @@ extends MemStore with StrictLogging {
   }
 
   override def readRawPartitions(ref: DatasetRef, maxChunkTime: Long,
-                                 partMethod: PartitionScanMethod,
+                                 tsMethod: TimeseriesScanMethod,
                                  chunkMethod: ChunkScanMethod): Observable[RawPartData] = ???
 
   // TODO we need breakdown for downsample store too, but in a less memory intensive way

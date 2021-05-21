@@ -70,7 +70,7 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
 
   private val stats = new DownsampledTimeSeriesShardStats(rawDatasetRef, shardNum)
 
-  private val partKeyIndex = new PartKeyLuceneIndex(indexDataset, schemas.part, shardNum, indexTtlMs)
+  private val partKeyIndex = new TimeSeriesKeyTagValueLuceneIndex(indexDataset, schemas.ts, shardNum, indexTtlMs)
 
   private val indexUpdatedHour = new AtomicLong(0)
 
@@ -95,7 +95,7 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
                              endTime: Long,
                              startTime: Long,
                              limit: Int): Iterator[Map[ZeroCopyUTF8String, ZeroCopyUTF8String]] = {
-    LabelValueResultIterator(partKeyIndex.partIdsFromFilters(filter, startTime, endTime), labelNames, limit)
+    LabelValueResultIterator(partKeyIndex.tsIdsFromFilters(filter, startTime, endTime), labelNames, limit)
   }
 
   def partKeysWithFilters(filter: Seq[ColumnFilter],
@@ -104,8 +104,8 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
                           startTime: Long,
                           limit: Int): Iterator[Map[ZeroCopyUTF8String, ZeroCopyUTF8String]] = {
     partKeyIndex.partKeyRecordsFromFilters(filter, startTime, endTime).iterator.take(limit).map { pk =>
-      val partKey = PartKeyWithTimes(pk.partKey, UnsafeUtils.arayOffset, pk.startTime, pk.endTime)
-      schemas.part.binSchema.toStringPairs(partKey.base, partKey.offset).map(pair => {
+      val partKey = TsKeyWithTimes(pk.partKey, UnsafeUtils.arayOffset, pk.startTime, pk.endTime)
+      schemas.ts.binSchema.toStringPairs(partKey.base, partKey.offset).map(pair => {
         pair._1.utf8 -> pair._2.utf8
       }).toMap ++
         Map("_type_".utf8 -> Schemas.global.schemaName(RecordSchema.schemaID(partKey.base, partKey.offset)).utf8)
@@ -218,13 +218,13 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
 
   def refreshPartKeyIndexBlocking(): Unit = {}
 
-  def lookupPartitions(partMethod: PartitionScanMethod,
+  def lookupPartitions(partMethod: TimeseriesScanMethod,
                        chunkMethod: ChunkScanMethod,
-                       querySession: QuerySession): PartLookupResult = {
+                       querySession: QuerySession): TsLookupResult = {
     partMethod match {
-      case SinglePartitionScan(partition, _) => throw new UnsupportedOperationException
-      case MultiPartitionScan(partKeys, _) => throw new UnsupportedOperationException
-      case FilteredPartitionScan(split, filters) =>
+      case SingleTimeseriesScan(partition, _) => throw new UnsupportedOperationException
+      case MultiTimeseriesScan(partKeys, _) => throw new UnsupportedOperationException
+      case FilteredTimeseriesScan(split, filters) =>
 
         if (filters.nonEmpty) {
           // This API loads all part keys into heap and can potentially be large size for
@@ -238,7 +238,7 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
             RecordSchema.schemaID(pkRec.partKey, UnsafeUtils.arayOffset)
           }
           stats.queryTimeRangeMins.record((chunkMethod.endTime - chunkMethod.startTime) / 60000 )
-          PartLookupResult(shardNum, chunkMethod, debox.Buffer.empty,
+          TsLookupResult(shardNum, chunkMethod, debox.Buffer.empty,
             _schema, debox.Map.empty, debox.Buffer.empty, recs, stats.chunksQueried)
         } else {
           throw new UnsupportedOperationException("Cannot have empty filters")
@@ -246,9 +246,9 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
     }
   }
 
-  def scanPartitions(lookup: PartLookupResult,
+  def scanPartitions(lookup: TsLookupResult,
                      colIds: Seq[Types.ColumnId],
-                     querySession: QuerySession): Observable[ReadablePartition] = {
+                     querySession: QuerySession): Observable[ReadableTimeSeries] = {
 
     // Step 1: Choose the downsample level depending on the range requested
     val (resolution, downsampledDataset) = chooseDownsampleResolution(lookup.chunkMethod)
@@ -260,13 +260,13 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
     // Create a ReadablePartition objects that contain the time series data. This can be either a
     // PagedReadablePartitionOnHeap or PagedReadablePartitionOffHeap. This will be garbage collected/freed
     // when query is complete.
-    Observable.fromIterable(lookup.pkRecords)
+    Observable.fromIterable(lookup.tsKeyRecords)
       .mapAsync(downsampleStoreConfig.demandPagingParallelism) { partRec =>
         val startExecute = System.currentTimeMillis()
         // TODO test multi-partition scan if latencies are high
         store.readRawPartitions(downsampledDataset,
                                 downsampleStoreConfig.maxChunkTime.toMillis,
-                                SinglePartitionScan(partRec.partKey, shardNum),
+                                SingleTimeseriesScan(partRec.partKey, shardNum),
                                 lookup.chunkMethod)
           .map { pd =>
             val part = makePagedPartition(pd, lookup.firstSchemaId.get, Some(resolution), colIds)
@@ -280,9 +280,9 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
       }
   }
 
-  private def capDataScannedPerShardCheck(lookup: PartLookupResult, resolution: Long) = {
+  private def capDataScannedPerShardCheck(lookup: TsLookupResult, resolution: Long) = {
     lookup.firstSchemaId.foreach { schId =>
-        schemas.ensureQueriedDataSizeWithinLimit(schId, lookup.pkRecords,
+        schemas.ensureQueriedDataSizeWithinLimit(schId, lookup.tsKeyRecords,
                                     downsampleStoreConfig.flushInterval.toMillis,
                                     resolution, lookup.chunkMethod, downsampleStoreConfig.maxDataPerShardQuery)
     }
@@ -304,13 +304,13 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
 
   private def makePagedPartition(part: RawPartData, firstSchemaId: Int,
                                  resolution: Option[Long],
-                                 colIds: Seq[Types.ColumnId]): ReadablePartition = {
+                                 colIds: Seq[Types.ColumnId]): ReadableTimeSeries = {
     val schemaId = RecordSchema.schemaID(part.partitionKey, UnsafeUtils.arayOffset)
     if (schemaId != firstSchemaId) {
       throw SchemaMismatch(schemas.schemaName(firstSchemaId), schemas.schemaName(schemaId))
     }
     // FIXME It'd be nice to pass in the correct partId here instead of -1
-    new PagedReadablePartition(schemas(schemaId), shardNum, -1, part, resolution, colIds)
+    new PagedReadableTimeSeries(schemas(schemaId), shardNum, -1, part, resolution, colIds)
   }
 
   /**
@@ -334,7 +334,7 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
         // Other strategies needs to be evaluated for making this performant - create facets for predefined fields or
         // have a centralized service/store for serving metadata
 
-        val currVal = schemas.part.binSchema.colValues(nextPart, UnsafeUtils.arayOffset, labelNames).
+        val currVal = schemas.ts.binSchema.colValues(nextPart, UnsafeUtils.arayOffset, labelNames).
           zipWithIndex.filter(_._1 != null).map{case(value, ind) => labelNames(ind).utf8 -> value.utf8}.toMap
 
         if (currVal.nonEmpty) rows.add(currVal)
@@ -352,7 +352,7 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
     * Retrieve partKey for a given PartId by looking up index
     */
   private def partKeyFromPartId(partId: Int): Array[Byte] = {
-    val partKeyBytes = partKeyIndex.partKeyFromPartId(partId)
+    val partKeyBytes = partKeyIndex.tsKeyFromTsId(partId)
     if (partKeyBytes.isDefined)
       // make a copy because BytesRef from lucene can have additional length bytes in its array
       // TODO small optimization for some other day
