@@ -10,7 +10,7 @@ import io.altoo.akka.serialization.kryo.serializer.scala.ScalaKryo
 import filodb.coordinator.FilodbSettings
 import filodb.core._
 import filodb.core.binaryrecord2.{RecordSchema => RecordSchema2}
-import filodb.core.metadata.{Column, Schema, Schemas, TimeSeriesSchema}
+import filodb.core.metadata.{Column, Schema, Schemas, TsKeySchema}
 import filodb.core.query.ColumnInfo
 import filodb.memory.format.ZeroCopyUTF8String
 
@@ -40,7 +40,7 @@ class KryoInit extends DefaultKryoInitializer {
     kryo.addDefaultSerializer(classOf[RecordSchema2], classOf[RecordSchema2Serializer])
     kryo.addDefaultSerializer(classOf[ZeroCopyUTF8String], classOf[ZeroCopyUTF8StringSerializer])
     kryo.register(classOf[Schema], new SchemaSerializer)
-    kryo.register(classOf[TimeSeriesSchema], new PartSchemaSerializer)
+    kryo.register(classOf[TsKeySchema], new PartSchemaSerializer)
 
     initOtherFiloClasses(kryo)
     initQueryEngine2Classes(kryo)
@@ -149,8 +149,8 @@ class SchemaSerializer extends KryoSerializer[Schema] {
   }
 }
 
-class PartSchemaSerializer extends KryoSerializer[TimeSeriesSchema] {
-  override def read(kryo: Kryo, input: Input, typ: Class[TimeSeriesSchema]): TimeSeriesSchema = {
+class PartSchemaSerializer extends KryoSerializer[TsKeySchema] {
+  override def read(kryo: Kryo, input: Input, typ: Class[TsKeySchema]): TsKeySchema = {
     // We have to dynamically obtain the global schemas as we don't know when they will be initialized
     // but for sure when the serialization needs to happen, Akka is up already
     val schemas = FilodbSettings.globalOrDefault.schemas
@@ -158,7 +158,7 @@ class PartSchemaSerializer extends KryoSerializer[TimeSeriesSchema] {
     schemas.ts
   }
 
-  override def write(kryo: Kryo, output: Output, schema: TimeSeriesSchema): Unit = {
+  override def write(kryo: Kryo, output: Output, schema: TsKeySchema): Unit = {
     val schemas = FilodbSettings.globalOrDefault.schemas
     require(schema == schemas.ts)
   }

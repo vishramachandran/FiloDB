@@ -11,7 +11,7 @@ import monix.reactive.Observable
 
 import filodb.cassandra.FiloCassandraConnector
 import filodb.core.{DatasetRef, Response}
-import filodb.core.store.PartKeyRecord
+import filodb.core.store.TsKeyRecord
 
 sealed class PartitionKeysTable(val dataset: DatasetRef,
                                 val shard: Int,
@@ -76,18 +76,18 @@ sealed class PartitionKeysTable(val dataset: DatasetRef,
     s"WHERE partKey = ?"
   )
 
-  def writePartKey(pk: PartKeyRecord, diskTimeToLiveSeconds: Int): Future[Response] = {
+  def writePartKey(pk: TsKeyRecord, diskTimeToLiveSeconds: Int): Future[Response] = {
     if (diskTimeToLiveSeconds <= 0) {
       connector.execStmtWithRetries(writePartitionCqlNoTtl.bind(
-        toBuffer(pk.partKey), pk.startTime: JLong, pk.endTime: JLong))
+        toBuffer(pk.tsKey), pk.startTime: JLong, pk.endTime: JLong))
     } else {
       connector.execStmtWithRetries(writePartitionCql.bind(
-        toBuffer(pk.partKey), pk.startTime: JLong, pk.endTime: JLong, diskTimeToLiveSeconds: JInt))
+        toBuffer(pk.tsKey), pk.startTime: JLong, pk.endTime: JLong, diskTimeToLiveSeconds: JInt))
     }
   }
 
-  def scanPartKeys(tokens: Seq[(String, String)], scanParallelism: Int): Observable[PartKeyRecord] = {
-    val res: Observable[Iterator[PartKeyRecord]] = Observable.fromIterable(tokens)
+  def scanPartKeys(tokens: Seq[(String, String)], scanParallelism: Int): Observable[TsKeyRecord] = {
+    val res: Observable[Iterator[TsKeyRecord]] = Observable.fromIterable(tokens)
       .mapAsync(scanParallelism) { range =>
         val fut = session.executeAsync(scanCql.bind(range._1.toLong: JLong, range._2.toLong: JLong))
                          .toIterator.handleErrors
@@ -175,7 +175,7 @@ sealed class PartitionKeysTable(val dataset: DatasetRef,
    * @param pk partKey bytes
    * @return Option[PartKeyRecord]
    */
-  def readPartKey(pk: Array[Byte]) : Option[PartKeyRecord] = {
+  def readPartKey(pk: Array[Byte]) : Option[TsKeyRecord] = {
     val iterator = session.execute(readCql.bind().setBytes(0, toBuffer(pk))).iterator()
     if (iterator.hasNext) {
       Some(PartitionKeysTable.rowToPartKeyRecord(iterator.next()))
@@ -199,7 +199,7 @@ sealed class PartitionKeysTable(val dataset: DatasetRef,
 
 object PartitionKeysTable {
   private[columnstore] def rowToPartKeyRecord(row: Row) = {
-    PartKeyRecord(row.getBytes("partKey").array(),
+    TsKeyRecord(row.getBytes("partKey").array(),
       row.getLong("startTime"), row.getLong("endTime"), None)
   }
 }

@@ -71,7 +71,7 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
   //  4. upload to memory and return partition
   // Definitely room for improvement, such as fetching multiple partitions at once, more parallelism, etc.
   //scalastyle:off
-  override def scanPartitions(partLookupRes: TsLookupResult,
+  override def scanTimeSeries(partLookupRes: TsLookupResult,
                               colIds: Seq[Types.ColumnId],
                               querySession: QuerySession): Observable[ReadableTimeSeries] = {
 
@@ -197,7 +197,7 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
           logger.debug(s"Creating TSPartition for ODP from part ID $id in dataset=$ref shard=$shardNum")
           // If not there, then look up in Lucene and get the details
           for { partKeyBytesRef <- tsKeyTagValueIndex.tsKeyFromTsId(id)
-                unsafeKeyOffset = TimeSeriesKeyTagValueLuceneIndex.bytesRefToUnsafeOffset(partKeyBytesRef.offset)
+                unsafeKeyOffset = TsKeyLuceneIndex.bytesRefToUnsafeOffset(partKeyBytesRef.offset)
                 group = tsKeyGroup(schemas.ts.binSchema, partKeyBytesRef.bytes, unsafeKeyOffset, numGroups)
                 sch  <- Option(schemas(RecordSchema.schemaID(partKeyBytesRef.bytes, unsafeKeyOffset)))
                           } yield {
@@ -207,7 +207,7 @@ TimeSeriesShard(ref, schemas, storeConfig, quotaSource, shardNum, bufferMemoryMa
               "after sometime.")
             val stamp = tsSetLock.writeLock()
               try {
-                markPartAsNotIngesting(part, odp = true)
+                markTsAsNotIngesting(part, odp = true)
                 tsKeyToTs.add(part)
               } finally {
                 tsSetLock.unlockWrite(stamp)

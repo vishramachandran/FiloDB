@@ -9,7 +9,7 @@ import monix.eval.Task
 import monix.reactive.Observable
 import org.joda.time.DateTime
 
-import filodb.core.Types.{PartitionKey, UTF8Map}
+import filodb.core.Types.{TsKeyPtr, UTF8Map}
 import filodb.core.binaryrecord2.RecordBuilder
 import filodb.core.memstore.{SomeData, TimeSeriesSpec, WriteBufferPool}
 import filodb.core.metadata.{Dataset, DatasetOptions, Schema, Schemas}
@@ -22,7 +22,7 @@ import filodb.memory.format.ZeroCopyUTF8String._
 
 object TestData {
   def toChunkSetStream(s: Schema,
-                       part: PartitionKey,
+                       part: TsKeyPtr,
                        rows: Seq[RowReader],
                        rowsPerChunk: Int = 10): Observable[ChunkSet] =
     Observable.fromIterator(rows.grouped(rowsPerChunk).map {
@@ -162,7 +162,7 @@ object GdeltTestData {
   def partKeyFromRecords(ds: Dataset, records: SomeData, builder: Option[RecordBuilder] = None): Seq[Long] = {
     val partKeyBuilder = builder.getOrElse(new RecordBuilder(TestData.nativeMem))
     records.records.map { case (base, offset) =>
-      ds.comparator.buildPartKeyFromIngest(base, offset, partKeyBuilder)
+      ds.comparator.buildTsKeyFromIngest(base, offset, partKeyBuilder)
     }.toVector
   }
 
@@ -512,7 +512,7 @@ object MetricsTestData {
     final def getInt(columnNo: Int): Int = ???
     final def notNull(columnNo: Int): Boolean = true
     final def getBlobBase(columnNo: Int): Any = ???
-    final def getBlobOffset(columnNo: Int): PartitionKey = ???
+    final def getBlobOffset(columnNo: Int): TsKeyPtr = ???
     final def getBlobNumBytes(columnNo: Int): Int = ???
   }
 

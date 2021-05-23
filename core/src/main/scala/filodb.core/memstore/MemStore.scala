@@ -26,7 +26,7 @@ sealed trait DataOrCommand
 final case class SomeData(records: RecordContainer, offset: Long) extends DataOrCommand
 
 final case class FlushGroup(shard: Int, groupNum: Int, flushWatermark: Long,
-                            dirtyPartsToFlush: debox.Buffer[Int])
+                            dirtyTsToFlush: debox.Buffer[Int])
 
 final case class FlushError(err: ErrorResponse) extends Exception(s"Flush error $err")
 

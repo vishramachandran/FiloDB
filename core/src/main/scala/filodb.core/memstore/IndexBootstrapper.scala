@@ -8,7 +8,7 @@ import monix.reactive.Observable
 import filodb.core.DatasetRef
 import filodb.core.binaryrecord2.RecordBuilder
 import filodb.core.metadata.Schemas
-import filodb.core.store.{ColumnStore, PartKeyRecord}
+import filodb.core.store.{ColumnStore, TsKeyRecord}
 
 class IndexBootstrapper(colStore: ColumnStore) {
 
@@ -25,10 +25,10 @@ class IndexBootstrapper(colStore: ColumnStore) {
     * @param assignPartId the function to invoke to get the partitionId to be used to populate the index record
     * @return number of updated records
     */
-  def bootstrapIndexRaw(index: TimeSeriesKeyTagValueLuceneIndex,
+  def bootstrapIndexRaw(index: TsKeyLuceneIndex,
                         shardNum: Int,
                         ref: DatasetRef)
-                       (assignPartId: PartKeyRecord => Int): Task[Long] = {
+                       (assignPartId: TsKeyRecord => Int): Task[Long] = {
 
     val recoverIndexLatency = Kamon.gauge("shard-recover-index-latency", MeasurementUnit.time.milliseconds)
       .withTag("dataset", ref.dataset)
@@ -37,7 +37,7 @@ class IndexBootstrapper(colStore: ColumnStore) {
     colStore.scanPartKeys(ref, shardNum)
       .map { pk =>
         val partId = assignPartId(pk)
-        index.addPartKey(pk.partKey, partId, pk.startTime, pk.endTime)()
+        index.addTsKey(pk.tsKey, partId, pk.startTime, pk.endTime)()
       }
       .countL
       .map { count =>
@@ -53,10 +53,10 @@ class IndexBootstrapper(colStore: ColumnStore) {
    * Not doing this in raw cluster since parallel TimeSeriesPartition
    * creation requires more careful contention analysis
    */
-  def bootstrapIndexDownsample(index: TimeSeriesKeyTagValueLuceneIndex,
+  def bootstrapIndexDownsample(index: TsKeyLuceneIndex,
                                shardNum: Int,
                                ref: DatasetRef)
-                    (assignPartId: PartKeyRecord => Int): Task[Long] = {
+                    (assignPartId: TsKeyRecord => Int): Task[Long] = {
 
     val recoverIndexLatency = Kamon.gauge("shard-recover-index-latency", MeasurementUnit.time.milliseconds)
       .withTag("dataset", ref.dataset)
@@ -66,7 +66,7 @@ class IndexBootstrapper(colStore: ColumnStore) {
       .mapAsync(Runtime.getRuntime.availableProcessors()) { pk =>
         Task {
           val partId = assignPartId(pk)
-          index.addPartKey(pk.partKey, partId, pk.startTime, pk.endTime)()
+          index.addTsKey(pk.tsKey, partId, pk.startTime, pk.endTime)()
         }
       }
       .countL
@@ -87,7 +87,7 @@ class IndexBootstrapper(colStore: ColumnStore) {
     * @return number of records refreshed
     */
   def refreshWithDownsamplePartKeys(
-                                     index: TimeSeriesKeyTagValueLuceneIndex,
+                                     index: TsKeyLuceneIndex,
                                      shardNum: Int,
                                      ref: DatasetRef,
                                      fromHour: Long,
@@ -104,10 +104,10 @@ class IndexBootstrapper(colStore: ColumnStore) {
       colStore.getPartKeysByUpdateHour(ref, shardNum, hour)
     }.mapAsync(parallelism) { pk =>
       Task {
-        val downsamplPartKey = RecordBuilder.buildDownsamplePartKey(pk.partKey, schemas)
+        val downsamplPartKey = RecordBuilder.buildDownsamplePartKey(pk.tsKey, schemas)
         downsamplPartKey.foreach { dpk =>
           val partId = lookUpOrAssignPartId(dpk)
-          index.upsertPartKey(dpk, partId, pk.startTime, pk.endTime)()
+          index.upsertTsKey(dpk, partId, pk.startTime, pk.endTime)()
         }
       }
      }

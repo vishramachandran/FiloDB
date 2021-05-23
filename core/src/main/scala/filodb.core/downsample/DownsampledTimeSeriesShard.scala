@@ -70,7 +70,7 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
 
   private val stats = new DownsampledTimeSeriesShardStats(rawDatasetRef, shardNum)
 
-  private val partKeyIndex = new TimeSeriesKeyTagValueLuceneIndex(indexDataset, schemas.ts, shardNum, indexTtlMs)
+  private val partKeyIndex = new TsKeyLuceneIndex(indexDataset, schemas.ts, shardNum, indexTtlMs)
 
   private val indexUpdatedHour = new AtomicLong(0)
 
@@ -103,8 +103,8 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
                           endTime: Long,
                           startTime: Long,
                           limit: Int): Iterator[Map[ZeroCopyUTF8String, ZeroCopyUTF8String]] = {
-    partKeyIndex.partKeyRecordsFromFilters(filter, startTime, endTime).iterator.take(limit).map { pk =>
-      val partKey = TsKeyWithTimes(pk.partKey, UnsafeUtils.arayOffset, pk.startTime, pk.endTime)
+    partKeyIndex.tsKeyRecordsFromFilters(filter, startTime, endTime).iterator.take(limit).map { pk =>
+      val partKey = TsKeyWithTimes(pk.tsKey, UnsafeUtils.arayOffset, pk.startTime, pk.endTime)
       schemas.ts.binSchema.toStringPairs(partKey.base, partKey.offset).map(pair => {
         pair._1.utf8 -> pair._2.utf8
       }).toMap ++
@@ -154,8 +154,8 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
   private def purgeExpiredIndexEntries(): Unit = {
     val start = System.currentTimeMillis()
     try {
-      val partsToPurge = partKeyIndex.partIdsEndedBefore(System.currentTimeMillis() - downsampleTtls.last.toMillis)
-      partKeyIndex.removePartKeys(partsToPurge)
+      val partsToPurge = partKeyIndex.tsIdsEndedBefore(System.currentTimeMillis() - downsampleTtls.last.toMillis)
+      partKeyIndex.removeTsKeys(partsToPurge)
       logger.info(s"Purged ${partsToPurge.length} entries from downsample " +
         s"index of dataset=$rawDatasetRef shard=$shardNum")
       stats.indexEntriesPurged.increment(partsToPurge.length)
@@ -201,7 +201,7 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
   }
 
   private def lookupOrCreatePartId(pk: Array[Byte]): Int = {
-    partKeyIndex.partIdFromPartKeySlow(pk, UnsafeUtils.arayOffset).getOrElse(createPartitionID())
+    partKeyIndex.tsIdFromTsKeySlow(pk, UnsafeUtils.arayOffset).getOrElse(createPartitionID())
   }
 
   /**
@@ -233,9 +233,9 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
           // Second iteration is for query result evaluation. Loading everything to heap
           // is expensive, but we do it to handle data sizing for metrics that have
           // continuous churn. See capDataScannedPerShardCheck method.
-          val recs = partKeyIndex.partKeyRecordsFromFilters(filters, chunkMethod.startTime, chunkMethod.endTime)
+          val recs = partKeyIndex.tsKeyRecordsFromFilters(filters, chunkMethod.startTime, chunkMethod.endTime)
           val _schema = recs.headOption.map { pkRec =>
-            RecordSchema.schemaID(pkRec.partKey, UnsafeUtils.arayOffset)
+            RecordSchema.schemaID(pkRec.tsKey, UnsafeUtils.arayOffset)
           }
           stats.queryTimeRangeMins.record((chunkMethod.endTime - chunkMethod.startTime) / 60000 )
           TsLookupResult(shardNum, chunkMethod, debox.Buffer.empty,
@@ -266,7 +266,7 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
         // TODO test multi-partition scan if latencies are high
         store.readRawPartitions(downsampledDataset,
                                 downsampleStoreConfig.maxChunkTime.toMillis,
-                                SingleTimeseriesScan(partRec.partKey, shardNum),
+                                SingleTimeseriesScan(partRec.tsKey, shardNum),
                                 lookup.chunkMethod)
           .map { pd =>
             val part = makePagedPartition(pd, lookup.firstSchemaId.get, Some(resolution), colIds)
@@ -274,7 +274,7 @@ class DownsampledTimeSeriesShard(rawDatasetRef: DatasetRef,
             stats.singlePartCassFetchLatency.record(Math.max(0, System.currentTimeMillis - startExecute))
             part
           }
-          .defaultIfEmpty(makePagedPartition(RawPartData(partRec.partKey, Seq.empty),
+          .defaultIfEmpty(makePagedPartition(RawPartData(partRec.tsKey, Seq.empty),
             lookup.firstSchemaId.get, Some(resolution), colIds))
           .headL
       }

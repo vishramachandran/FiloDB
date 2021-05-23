@@ -536,7 +536,7 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
       val partKeyBuilder = new RecordBuilder(MemFactory.onHeapFactory)
 
       ingestRecords.foreach { case (base, off) =>
-        comparator2.buildPartKeyFromIngest(base, off, partKeyBuilder)
+        comparator2.buildTsKeyFromIngest(base, off, partKeyBuilder)
       }
 
       partKeyBuilder.allContainers.head.consumeRecords(consumer)
@@ -568,7 +568,7 @@ class BinaryRecordSpec extends AnyFunSpec with Matchers with BeforeAndAfter with
       // Now create partition keys
       val partKeyBuilder = new RecordBuilder(MemFactory.onHeapFactory)
       histRecords.foreach { case (base, off) =>
-        histDataset.comparator.buildPartKeyFromIngest(base, off, partKeyBuilder)
+        histDataset.comparator.buildTsKeyFromIngest(base, off, partKeyBuilder)
       }
 
       records.clear()

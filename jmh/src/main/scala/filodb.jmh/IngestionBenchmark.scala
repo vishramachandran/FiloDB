@@ -46,7 +46,7 @@ class IngestionBenchmark {
   val partKeyBuilder = new RecordBuilder(MemFactory.onHeapFactory)
 
   val consumer = new BinaryRegionConsumer {
-    def onNext(base: Any, offset: Long): Unit = comparator.buildPartKeyFromIngest(base, offset, partKeyBuilder)
+    def onNext(base: Any, offset: Long): Unit = comparator.buildTsKeyFromIngest(base, offset, partKeyBuilder)
   }
   ingestBuilder.allContainers.head.consumeRecords(consumer)
 

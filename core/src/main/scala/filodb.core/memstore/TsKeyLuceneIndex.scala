@@ -25,22 +25,22 @@ import org.apache.lucene.util.automaton.RegExp
 import spire.syntax.cfor._
 
 import filodb.core.{concurrentCache, DatasetRef}
-import filodb.core.Types.PartitionKey
+import filodb.core.Types.TsKeyPtr
 import filodb.core.binaryrecord2.MapItemConsumer
 import filodb.core.metadata.Column.ColumnType.{MapColumn, StringColumn}
-import filodb.core.metadata.TimeSeriesSchema
+import filodb.core.metadata.TsKeySchema
 import filodb.core.query.{ColumnFilter, Filter}
 import filodb.core.query.Filter._
 import filodb.memory.{BinaryRegionLarge, UTF8StringMedium, UTF8StringShort}
 import filodb.memory.format.{UnsafeUtils, ZeroCopyUTF8String => UTF8Str}
 
-object TimeSeriesKeyTagValueLuceneIndex {
-  final val PART_ID = "__partId__"
+object TsKeyLuceneIndex {
+  final val TS_ID = "__tsId__"
   final val START_TIME = "__startTime__"
   final val END_TIME = "__endTime__"
-  final val PART_KEY = "__partKey__"
+  final val TS_KEY = "__tsKey__"
 
-  final val ignoreIndexNames = HashSet(START_TIME, PART_KEY, END_TIME, PART_ID)
+  final val ignoreIndexNames = HashSet(START_TIME, TS_KEY, END_TIME, TS_ID)
 
   val MAX_STR_INTERN_ENTRIES = 10000
   val MAX_TERMS_TO_ITERATE = 10000
@@ -51,14 +51,14 @@ object TimeSeriesKeyTagValueLuceneIndex {
 
   def unsafeOffsetToBytesRefOffset(offset: Long): Int = offset.toInt - UnsafeUtils.arayOffset
 
-  def partKeyBytesRef(partKeyBase: Array[Byte], partKeyOffset: Long): BytesRef = {
-    new BytesRef(partKeyBase, unsafeOffsetToBytesRefOffset(partKeyOffset),
-      BinaryRegionLarge.numBytes(partKeyBase, partKeyOffset))
+  def tsKeyBytesRef(tsKeyBase: Array[Byte], tsKeyOffset: Long): BytesRef = {
+    new BytesRef(tsKeyBase, unsafeOffsetToBytesRefOffset(tsKeyOffset),
+      BinaryRegionLarge.numBytes(tsKeyBase, tsKeyOffset))
   }
 
   private def createTempDir(ref: DatasetRef, shardNum: Int): File = {
     val baseDir = new File(System.getProperty("java.io.tmpdir"))
-    val baseName = s"partKeyIndex-$ref-$shardNum-${System.currentTimeMillis()}-"
+    val baseName = s"tsKeyIndex-$ref-$shardNum-${System.currentTimeMillis()}-"
     val tempDir = new File(baseDir, baseName)
     tempDir.mkdir()
     tempDir
@@ -66,16 +66,16 @@ object TimeSeriesKeyTagValueLuceneIndex {
 }
 
 final case class TermInfo(term: UTF8Str, freq: Int)
-final case class TsKeyLuceneIndexRecord(partKey: Array[Byte], startTime: Long, endTime: Long)
+final case class TsKeyLuceneIndexRecord(tsKey: Array[Byte], startTime: Long, endTime: Long)
 
-class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
-                                       schema: TimeSeriesSchema,
-                                       shardNum: Int,
-                                       retentionMillis: Long, // only used to calculate fallback startTime
-                                       diskLocation: Option[File] = None
+class TsKeyLuceneIndex(ref: DatasetRef,
+                       schema: TsKeySchema,
+                       shardNum: Int,
+                       retentionMillis: Long, // only used to calculate fallback startTime
+                       diskLocation: Option[File] = None
                          ) extends StrictLogging {
 
-  import TimeSeriesKeyTagValueLuceneIndex._
+  import TsKeyLuceneIndex._
 
   val startTimeLookupLatency = Kamon.histogram("index-startTimes-for-odp-lookup-latency",
     MeasurementUnit.time.milliseconds)
@@ -87,12 +87,12 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
     .withTag("dataset", ref.dataset)
     .withTag("shard", shardNum)
 
-  val partIdFromPartKeyLookupLatency = Kamon.histogram("index-ingestion-partId-lookup-latency",
+  val tsIdFromTsKeyLookupLatency = Kamon.histogram("index-ingestion-partId-lookup-latency",
     MeasurementUnit.time.milliseconds)
     .withTag("dataset", ref.dataset)
     .withTag("shard", shardNum)
 
-  private val numPartColumns = schema.columns.length
+  private val numTsKeyColumns = schema.columns.length
   private val indexDiskLocation = diskLocation.getOrElse(createTempDir(ref, shardNum)).toPath
   private val mMapDirectory = new MMapDirectory(indexDiskLocation)
   private val analyzer = new StandardAnalyzer()
@@ -108,7 +108,7 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
   config.setIndexSort(endTimeSort)
   private val indexWriter = new IndexWriter(mMapDirectory, config)
 
-  private val utf8ToStrCache = concurrentCache[UTF8Str, String](TimeSeriesKeyTagValueLuceneIndex.MAX_STR_INTERN_ENTRIES)
+  private val utf8ToStrCache = concurrentCache[UTF8Str, String](TsKeyLuceneIndex.MAX_STR_INTERN_ENTRIES)
 
   //scalastyle:off
   private val searcherManager = new SearcherManager(indexWriter, null)
@@ -132,26 +132,26 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
   }
 
   /**
-    * Map of partKey column to the logic for indexing the column (aka Indexer).
-    * Optimization to avoid match logic while iterating through each column of the partKey
+    * Map of tsKey column to the logic for indexing the column (aka Indexer).
+    * Optimization to avoid match logic while iterating through each column of the tsKey
     */
   private final val indexers = schema.columns.zipWithIndex.map { case (c, pos) =>
     c.columnType match {
       case StringColumn => new Indexer {
         val colName = UTF8Str(c.name)
-        def fromPartKey(base: Any, offset: Long, partIndex: Int): Unit = {
+        def fromTsKey(base: Any, offset: Long, tsKeyIndex: Int): Unit = {
           val strOffset = schema.binSchema.blobOffset(base, offset, pos)
           val numBytes = schema.binSchema.blobNumBytes(base, offset, pos)
           val value = new BytesRef(base.asInstanceOf[Array[Byte]], strOffset.toInt - UnsafeUtils.arayOffset, numBytes)
-          addIndexEntry(colName.toString, value, partIndex)
+          addIndexEntry(colName.toString, value, tsKeyIndex)
         }
-        def getNamesValues(key: PartitionKey): Seq[(UTF8Str, UTF8Str)] = ??? // not used
+        def getNamesValues(key: TsKeyPtr): Seq[(UTF8Str, UTF8Str)] = ??? // not used
       }
       case MapColumn => new Indexer {
-        def fromPartKey(base: Any, offset: Long, partIndex: Int): Unit = {
+        def fromTsKey(base: Any, offset: Long, tsKeyIndex: Int): Unit = {
           schema.binSchema.consumeMapItems(base, offset, pos, mapConsumer)
         }
-        def getNamesValues(key: PartitionKey): Seq[(UTF8Str, UTF8Str)] = ??? // not used
+        def getNamesValues(key: TsKeyPtr): Seq[(UTF8Str, UTF8Str)] = ??? // not used
       }
       case other: Any =>
         logger.warn(s"Column $c has type that cannot be indexed and will be ignored right now")
@@ -175,12 +175,12 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
   }
 
   /**
-    * Find partitions that ended ingesting before a given timestamp. Used to identify partitions that can be purged.
-    * @return matching partIds
+    * Find timeseries that ended ingesting before a given timestamp. Used to identify timeseries that can be purged.
+    * @return matching tsIds
     */
-  def partIdsEndedBefore(endedBefore: Long): debox.Buffer[Int] = {
-    val collector = new PartIdCollector()
-    val deleteQuery = LongPoint.newRangeQuery(TimeSeriesKeyTagValueLuceneIndex.END_TIME, 0, endedBefore)
+  def tsIdsEndedBefore(endedBefore: Long): debox.Buffer[Int] = {
+    val collector = new TsIdCollector()
+    val deleteQuery = LongPoint.newRangeQuery(TsKeyLuceneIndex.END_TIME, 0, endedBefore)
 
     withNewSearcher(s => s.search(deleteQuery, collector))
     collector.result
@@ -196,15 +196,15 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
   }
 
   /**
-    * Delete partitions with given partIds
+    * Delete timeseries with given tsIds
     */
-  def removePartKeys(partIds: debox.Buffer[Int]): Unit = {
-    if (!partIds.isEmpty) {
+  def removeTsKeys(tsIds: debox.Buffer[Int]): Unit = {
+    if (!tsIds.isEmpty) {
       val terms = new util.ArrayList[BytesRef]()
-      cforRange { 0 until partIds.length } { i =>
-        terms.add(new BytesRef(partIds(i).toString.getBytes(StandardCharsets.UTF_8)))
+      cforRange { 0 until tsIds.length } { i =>
+        terms.add(new BytesRef(tsIds(i).toString.getBytes(StandardCharsets.UTF_8)))
       }
-      indexWriter.deleteDocuments(new TermInSetQuery(PART_ID, terms))
+      indexWriter.deleteDocuments(new TermInSetQuery(TS_ID, terms))
     }
   }
 
@@ -289,61 +289,60 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
     luceneDocument.get().add(new StringField(labelName, value, Store.NO))
   }
 
-  def addPartKey(partKeyOnHeapBytes: Array[Byte],
-                 partId: Int,
-                 startTime: Long,
-                 endTime: Long = Long.MaxValue,
-                 partKeyBytesRefOffset: Int = 0)
-                (partKeyNumBytes: Int = partKeyOnHeapBytes.length): Unit = {
-    val document = makeDocument(partKeyOnHeapBytes, partKeyBytesRefOffset, partKeyNumBytes, partId, startTime, endTime)
-    logger.debug(s"Adding document ${partKeyString(partId, partKeyOnHeapBytes, partKeyBytesRefOffset)} " +
+  def addTsKey(tsKeyOnHeapBytes: Array[Byte],
+               tsId: Int,
+               startTime: Long,
+               endTime: Long = Long.MaxValue,
+               tsKeyBytesRefOffset: Int = 0)
+              (tsKeyNumBytes: Int = tsKeyOnHeapBytes.length): Unit = {
+    val document = makeDocument(tsKeyOnHeapBytes, tsKeyBytesRefOffset, tsKeyNumBytes, tsId, startTime, endTime)
+    logger.debug(s"Adding document ${tsKeyString(tsId, tsKeyOnHeapBytes, tsKeyBytesRefOffset)} " +
                  s"with startTime=$startTime endTime=$endTime into dataset=$ref shard=$shardNum")
     indexWriter.addDocument(document)
   }
 
-  def upsertPartKey(partKeyOnHeapBytes: Array[Byte],
-                    partId: Int,
-                    startTime: Long,
-                    endTime: Long = Long.MaxValue,
-                    partKeyBytesRefOffset: Int = 0)
-                   (partKeyNumBytes: Int = partKeyOnHeapBytes.length): Unit = {
-    val document = makeDocument(partKeyOnHeapBytes, partKeyBytesRefOffset, partKeyNumBytes, partId, startTime, endTime)
-    logger.debug(s"Upserting document ${partKeyString(partId, partKeyOnHeapBytes, partKeyBytesRefOffset)} " +
+  def upsertTsKey(tsKeyOnHeapBytes: Array[Byte],
+                  tsId: Int,
+                  startTime: Long,
+                  endTime: Long = Long.MaxValue,
+                  tsKeyBytesRefOffset: Int = 0)
+                 (tsKeyNumBytes: Int = tsKeyOnHeapBytes.length): Unit = {
+    val document = makeDocument(tsKeyOnHeapBytes, tsKeyBytesRefOffset, tsKeyNumBytes, tsId, startTime, endTime)
+    logger.debug(s"Upserting document ${tsKeyString(tsId, tsKeyOnHeapBytes, tsKeyBytesRefOffset)} " +
                  s"with startTime=$startTime endTime=$endTime into dataset=$ref shard=$shardNum")
-    indexWriter.updateDocument(new Term(PART_ID, partId.toString), document)
+    indexWriter.updateDocument(new Term(TS_ID, tsId.toString), document)
   }
 
-  private def partKeyString(partId: Int,
-                            partKeyOnHeapBytes: Array[Byte],
-                            partKeyBytesRefOffset: Int = 0): String = {
-    val partHash = schema.binSchema.tsHash(partKeyOnHeapBytes, bytesRefToUnsafeOffset(partKeyBytesRefOffset))
+  private def tsKeyString(tsId: Int,
+                          tsKeyOnHeapBytes: Array[Byte],
+                          tsKeyBytesRefOffset: Int = 0): String = {
+    val tsHash = schema.binSchema.tsHash(tsKeyOnHeapBytes, bytesRefToUnsafeOffset(tsKeyBytesRefOffset))
     //scalastyle:off
-    s"shard=$shardNum partId=$partId partHash=$partHash [${
-      TimeSeries
-        .tsKeyString(schema, partKeyOnHeapBytes, bytesRefToUnsafeOffset(partKeyBytesRefOffset))
+    s"shard=$shardNum tsId=$tsId tsHash=$tsHash [${
+      TimeSeries.tsKeyString(schema, tsKeyOnHeapBytes, bytesRefToUnsafeOffset(tsKeyBytesRefOffset))
     }]"
     //scalastyle:on
   }
 
-  private def makeDocument(partKeyOnHeapBytes: Array[Byte],
-                           partKeyBytesRefOffset: Int,
-                           partKeyNumBytes: Int,
-                           partId: Int, startTime: Long, endTime: Long): Document = {
+  private def makeDocument(tsKeyOnHeapBytes: Array[Byte],
+                           tsKeyBytesRefOffset: Int,
+                           tsKeyNumBytes: Int,
+                           tsId: Int, startTime: Long, endTime: Long): Document = {
     val document = new Document()
-    // TODO We can use RecordSchema.toStringPairs to get the name/value pairs from partKey.
+    // TODO We can use RecordSchema.toStringPairs to get the name/value pairs from tsKey.
     // That is far more simpler with much of the logic abstracted out.
     // Currently there is a bit of leak in abstraction of Binary Record processing in this class.
 
     luceneDocument.set(document) // threadlocal since we are not able to pass the document into mapconsumer
-    cforRange { 0 until numPartColumns } { i =>
-      indexers(i).fromPartKey(partKeyOnHeapBytes, bytesRefToUnsafeOffset(partKeyBytesRefOffset), partId)
+    cforRange { 0 until numTsKeyColumns } { i =>
+      indexers(i).fromTsKey(tsKeyOnHeapBytes, bytesRefToUnsafeOffset(tsKeyBytesRefOffset), tsId)
     }
-    // partId
-    document.add(new StringField(PART_ID, partId.toString, Store.NO)) // cant store as an IntPoint because of lucene bug
-    document.add(new NumericDocValuesField(PART_ID, partId))
-    // partKey
-    val bytesRef = new BytesRef(partKeyOnHeapBytes, partKeyBytesRefOffset, partKeyNumBytes)
-    document.add(new BinaryDocValuesField(PART_KEY, bytesRef))
+    // tsId
+    document.add(new StringField(TS_ID, tsId.toString, Store.NO)) // cant store as an IntPoint because of lucene bug
+    document.add(new NumericDocValuesField(TS_ID, tsId))
+    // tsKey
+    val bytesRef = new BytesRef(tsKeyOnHeapBytes, tsKeyBytesRefOffset, tsKeyNumBytes)
+    document.add(new BinaryDocValuesField(TS_KEY, bytesRef))
     // startTime
     document.add(new LongPoint(START_TIME, startTime))
     document.add(new NumericDocValuesField(START_TIME, startTime))
@@ -356,39 +355,39 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
   }
 
   /**
-    * Called when TSPartition needs to be created when on-demand-paging from a
-    * partId that does not exist on heap
+    * Called when TimeSeries needs to be created when on-demand-paging from a
+    * tsId that does not exist on heap
     */
-  def tsKeyFromTsId(partId: Int): Option[BytesRef] = {
-    val collector = new SinglePartKeyCollector()
-    withNewSearcher(s => s.search(new TermQuery(new Term(PART_ID, partId.toString)), collector) )
+  def tsKeyFromTsId(tsId: Int): Option[BytesRef] = {
+    val collector = new SingleTsKeyCollector()
+    withNewSearcher(s => s.search(new TermQuery(new Term(TS_ID, tsId.toString)), collector) )
     Option(collector.singleResult)
   }
 
   /**
     * Called when a document is updated with new endTime
     */
-  def startTimeFromPartId(partId: Int): Long = {
-    val collector = new NumericDocValueCollector(TimeSeriesKeyTagValueLuceneIndex.START_TIME)
-    withNewSearcher(s => s.search(new TermQuery(new Term(PART_ID, partId.toString)), collector))
+  def startTimeFromTsId(tsId: Int): Long = {
+    val collector = new NumericDocValueCollector(TsKeyLuceneIndex.START_TIME)
+    withNewSearcher(s => s.search(new TermQuery(new Term(TS_ID, tsId.toString)), collector))
     collector.singleResult
   }
 
   /**
     * Called when a document is updated with new endTime
     */
-  def startTimeFromPartIds(partIds: Iterator[Int]): debox.Map[Int, Long] = {
+  def startTimeFromTsIds(tsIds: Iterator[Int]): debox.Map[Int, Long] = {
 
     val startExecute = System.currentTimeMillis()
     val span = Kamon.currentSpan()
-    val collector = new PartIdStartTimeCollector()
+    val collector = new TsIdStartTimeCollector()
     val terms = new util.ArrayList[BytesRef]()
-    partIds.foreach { pId =>
+    tsIds.foreach { pId =>
       terms.add(new BytesRef(pId.toString.getBytes(StandardCharsets.UTF_8)))
     }
     // dont use BooleanQuery which will hit the 1024 term limit. Instead use TermInSetQuery which is
     // more efficient within Lucene
-    withNewSearcher(s => s.search(new TermInSetQuery(PART_ID, terms), collector))
+    withNewSearcher(s => s.search(new TermInSetQuery(TS_ID, terms), collector))
     span.tag(s"num-partitions-to-page", terms.size())
     val latency = System.currentTimeMillis - startExecute
     span.mark(s"index-startTimes-for-odp-lookup-latency=${latency}ms")
@@ -399,48 +398,48 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
   /**
     * Called when a document is updated with new endTime
     */
-  def endTimeFromPartId(partId: Int): Long = {
-    val collector = new NumericDocValueCollector(TimeSeriesKeyTagValueLuceneIndex.END_TIME)
-    withNewSearcher(s => s.search(new TermQuery(new Term(PART_ID, partId.toString)), collector))
+  def endTimeFromTsId(tsId: Int): Long = {
+    val collector = new NumericDocValueCollector(TsKeyLuceneIndex.END_TIME)
+    withNewSearcher(s => s.search(new TermQuery(new Term(TS_ID, tsId.toString)), collector))
     collector.singleResult
   }
 
   /**
-    * Query top-k partIds matching a range of endTimes, in ascending order of endTime
+    * Query top-k tsIds matching a range of endTimes, in ascending order of endTime
     *
     * Note: This uses a collector that uses a PriorityQueue underneath covers.
     * O(k) heap memory will be used.
     */
-  def partIdsOrderedByEndTime(topk: Int,
-                              fromEndTime: Long = 0,
-                              toEndTime: Long = Long.MaxValue): EWAHCompressedBitmap = {
-    val coll = new TopKPartIdsCollector(topk)
+  def tsIdsOrderedByEndTime(topk: Int,
+                            fromEndTime: Long = 0,
+                            toEndTime: Long = Long.MaxValue): EWAHCompressedBitmap = {
+    val coll = new TopKTsIdsCollector(topk)
     withNewSearcher(s => s.search(LongPoint.newRangeQuery(END_TIME, fromEndTime, toEndTime), coll))
-    coll.topKPartIDsBitmap()
+    coll.topKTsIdsBitmap()
   }
 
-  def foreachPartKeyStillIngesting(func: (Int, BytesRef) => Unit): Int = {
+  def foreachTsKeyStillIngesting(func: (Int, BytesRef) => Unit): Int = {
     val coll = new ActionCollector(func)
     withNewSearcher(s => s.search(LongPoint.newExactQuery(END_TIME, Long.MaxValue), coll))
     coll.numHits
   }
 
-  def updatePartKeyWithEndTime(partKeyOnHeapBytes: Array[Byte],
-                               partId: Int,
-                               endTime: Long = Long.MaxValue,
-                               partKeyBytesRefOffset: Int = 0)
-                               (partKeyNumBytes: Int = partKeyOnHeapBytes.length): Unit = {
-    var startTime = startTimeFromPartId(partId) // look up index for old start time
+  def updateTsKeyWithEndTime(tsKeyOnHeapBytes: Array[Byte],
+                             tsId: Int,
+                             endTime: Long = Long.MaxValue,
+                             tsKeyBytesRefOffset: Int = 0)
+                            (tsKeyNumBytes: Int = tsKeyOnHeapBytes.length): Unit = {
+    var startTime = startTimeFromTsId(tsId) // look up index for old start time
     if (startTime == NOT_FOUND) {
       startTime = System.currentTimeMillis() - retentionMillis
-      logger.warn(s"Could not find in Lucene startTime for partId=$partId in dataset=$ref. Using " +
+      logger.warn(s"Could not find in Lucene startTime for tsId=$tsId in dataset=$ref. Using " +
         s"$startTime instead.", new IllegalStateException()) // assume this time series started retention period ago
     }
-    val updatedDoc = makeDocument(partKeyOnHeapBytes, partKeyBytesRefOffset, partKeyNumBytes,
-      partId, startTime, endTime)
-    logger.debug(s"Updating document ${partKeyString(partId, partKeyOnHeapBytes, partKeyBytesRefOffset)} " +
+    val updatedDoc = makeDocument(tsKeyOnHeapBytes, tsKeyBytesRefOffset, tsKeyNumBytes,
+      tsId, startTime, endTime)
+    logger.debug(s"Updating document ${tsKeyString(tsId, tsKeyOnHeapBytes, tsKeyBytesRefOffset)} " +
                  s"with startTime=$startTime endTime=$endTime into dataset=$ref shard=$shardNum")
-    indexWriter.updateDocument(new Term(PART_ID, partId.toString), updatedDoc)
+    indexWriter.updateDocument(new Term(TS_ID, tsId.toString), updatedDoc)
   }
 
   /**
@@ -494,15 +493,15 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
   def tsIdsFromFilters(columnFilters: Seq[ColumnFilter],
                        startTime: Long,
                        endTime: Long): debox.Buffer[Int] = {
-    val collector = new PartIdCollector() // passing zero for unlimited results
+    val collector = new TsIdCollector() // passing zero for unlimited results
     searchFromFilters(columnFilters, startTime, endTime, collector)
     collector.result
   }
 
-  def partKeyRecordsFromFilters(columnFilters: Seq[ColumnFilter],
-                                startTime: Long,
-                                endTime: Long): Seq[TsKeyLuceneIndexRecord] = {
-    val collector = new PartKeyRecordCollector()
+  def tsKeyRecordsFromFilters(columnFilters: Seq[ColumnFilter],
+                              startTime: Long,
+                              endTime: Long): Seq[TsKeyLuceneIndexRecord] = {
+    val collector = new TsKeyRecordCollector()
     searchFromFilters(columnFilters, startTime, endTime, collector)
     collector.records
   }
@@ -522,17 +521,17 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
     booleanQuery.add(LongPoint.newRangeQuery(START_TIME, 0, endTime), Occur.FILTER)
     booleanQuery.add(LongPoint.newRangeQuery(END_TIME, startTime, Long.MaxValue), Occur.FILTER)
     val query = booleanQuery.build()
-    logger.debug(s"Querying dataset=$ref shard=$shardNum partKeyIndex with: $query")
+    logger.debug(s"Querying dataset=$ref shard=$shardNum tsKeyIndex with: $query")
     withNewSearcher(s => s.search(query, collector))
     val latency = System.currentTimeMillis - startExecute
     span.mark(s"index-partition-lookup-latency=${latency}ms")
     queryIndexLookupLatency.record(latency)
   }
 
-  def partIdFromPartKeySlow(partKeyBase: Any,
-                            partKeyOffset: Long): Option[Int] = {
+  def tsIdFromTsKeySlow(tsKeyBase: Any,
+                        tsKeyOffset: Long): Option[Int] = {
 
-    val columnFilters = schema.binSchema.toStringPairs(partKeyBase, partKeyOffset)
+    val columnFilters = schema.binSchema.toStringPairs(tsKeyBase, tsKeyOffset)
       .map { pair => ColumnFilter(pair._1, Filter.Equals(pair._2)) }
 
     val startExecute = System.currentTimeMillis()
@@ -542,29 +541,29 @@ class TimeSeriesKeyTagValueLuceneIndex(ref: DatasetRef,
       booleanQuery.add(q, Occur.FILTER)
     }
     val query = booleanQuery.build()
-    logger.debug(s"Querying dataset=$ref shard=$shardNum partKeyIndex with: $query")
-    var chosenPartId: Option[Int] = None
-    def handleMatch(partId: Int, candidate: BytesRef): Unit = {
-      // we need an equals check because there can potentially be another partKey with additional tags
-      if (schema.binSchema.equals(partKeyBase, partKeyOffset,
-        candidate.bytes, TimeSeriesKeyTagValueLuceneIndex.bytesRefToUnsafeOffset(candidate.offset))) {
-        logger.debug(s"There is already a partId=$partId assigned for " +
-          s"${schema.binSchema.stringify(partKeyBase, partKeyOffset)} in" +
+    logger.debug(s"Querying dataset=$ref shard=$shardNum tsKeyIndex with: $query")
+    var chosenTsId: Option[Int] = None
+    def handleMatch(tsId: Int, candidate: BytesRef): Unit = {
+      // we need an equals check because there can potentially be another tsKey with additional tags
+      if (schema.binSchema.equals(tsKeyBase, tsKeyOffset,
+        candidate.bytes, TsKeyLuceneIndex.bytesRefToUnsafeOffset(candidate.offset))) {
+        logger.debug(s"There is already a tsId=$tsId assigned for " +
+          s"${schema.binSchema.stringify(tsKeyBase, tsKeyOffset)} in" +
           s" dataset=$ref shard=$shardNum")
-        chosenPartId = chosenPartId.orElse(Some(partId))
+        chosenTsId = chosenTsId.orElse(Some(tsId))
       }
     }
     val collector = new ActionCollector(handleMatch)
     withNewSearcher(s => s.search(query, collector))
-    partIdFromPartKeyLookupLatency.record(Math.max(0, System.currentTimeMillis - startExecute))
-    chosenPartId
+    tsIdFromTsKeyLookupLatency.record(Math.max(0, System.currentTimeMillis - startExecute))
+    chosenTsId
   }
 }
 
 class NumericDocValueCollector(docValueName: String) extends SimpleCollector {
 
   var docValue: NumericDocValues = _
-  var singleResult: Long = TimeSeriesKeyTagValueLuceneIndex.NOT_FOUND
+  var singleResult: Long = TsKeyLuceneIndex.NOT_FOUND
 
   // gets called for each segment
   override def doSetNextReader(context: LeafReaderContext): Unit = {
@@ -583,44 +582,44 @@ class NumericDocValueCollector(docValueName: String) extends SimpleCollector {
   override def needsScores(): Boolean = false
 }
 
-class SinglePartKeyCollector extends SimpleCollector {
+class SingleTsKeyCollector extends SimpleCollector {
 
-  var partKeyDv: BinaryDocValues = _
+  var tsKeyDv: BinaryDocValues = _
   var singleResult: BytesRef = _
 
   // gets called for each segment
   override def doSetNextReader(context: LeafReaderContext): Unit = {
-    partKeyDv = context.reader().getBinaryDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_KEY)
+    tsKeyDv = context.reader().getBinaryDocValues(TsKeyLuceneIndex.TS_KEY)
   }
 
   // gets called for each matching document in current segment
   override def collect(doc: Int): Unit = {
-    if (partKeyDv.advanceExact(doc)) {
-      singleResult = partKeyDv.binaryValue()
+    if (tsKeyDv.advanceExact(doc)) {
+      singleResult = tsKeyDv.binaryValue()
     } else {
-      throw new IllegalStateException("This shouldn't happen since every document should have a partKeyDv")
+      throw new IllegalStateException("This shouldn't happen since every document should have a tsKeyDv")
     }
   }
 
   override def needsScores(): Boolean = false
 }
 
-class SinglePartIdCollector extends SimpleCollector {
+class SingleTsIdCollector extends SimpleCollector {
 
-  var partIdDv: NumericDocValues = _
-  var singleResult: Int = TimeSeriesKeyTagValueLuceneIndex.NOT_FOUND
+  var tsIdDv: NumericDocValues = _
+  var singleResult: Int = TsKeyLuceneIndex.NOT_FOUND
 
   // gets called for each segment
   override def doSetNextReader(context: LeafReaderContext): Unit = {
-    partIdDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_ID)
+    tsIdDv = context.reader().getNumericDocValues(TsKeyLuceneIndex.TS_ID)
   }
 
   // gets called for each matching document in current segment
   override def collect(doc: Int): Unit = {
-    if (partIdDv.advanceExact(doc)) {
-      singleResult = partIdDv.longValue().toInt
+    if (tsIdDv.advanceExact(doc)) {
+      singleResult = tsIdDv.longValue().toInt
     } else {
-      throw new IllegalStateException("This shouldn't happen since every document should have a partKeyDv")
+      throw new IllegalStateException("This shouldn't happen since every document should have a tsKeyDv")
     }
   }
 
@@ -635,12 +634,12 @@ class SinglePartIdCollector extends SimpleCollector {
   * a segment once k elements have been added, or if all smaller values in the
   * segment have been examined.
   */
-class TopKPartIdsCollector(limit: Int) extends Collector with StrictLogging {
+class TopKTsIdsCollector(limit: Int) extends Collector with StrictLogging {
 
-  import TimeSeriesKeyTagValueLuceneIndex._
+  import TsKeyLuceneIndex._
 
   var endTimeDv: NumericDocValues = _
-  var partIdDv: NumericDocValues = _
+  var tsIdDv: NumericDocValues = _
   val endTimeComparator = Ordering.by[(Int, Long), Long](_._2).reverse
   val topkResults = new PriorityQueue[(Int, Long)](limit, endTimeComparator)
 
@@ -648,24 +647,24 @@ class TopKPartIdsCollector(limit: Int) extends Collector with StrictLogging {
   def getLeafCollector(context: LeafReaderContext): LeafCollector = {
     logger.trace("New segment inspected:" + context.id)
     endTimeDv = DocValues.getNumeric(context.reader, END_TIME)
-    partIdDv = DocValues.getNumeric(context.reader, PART_ID)
+    tsIdDv = DocValues.getNumeric(context.reader, TS_ID)
 
     new LeafCollector() {
       def setScorer(scorer: Scorer): Unit = {}
 
       // gets called for each matching document in the segment.
       def collect(doc: Int): Unit = {
-        val partIdValue = if (partIdDv.advanceExact(doc)) {
-          partIdDv.longValue().toInt
-        } else throw new IllegalStateException("This shouldn't happen since every document should have a partId")
+        val tsIdValue = if (tsIdDv.advanceExact(doc)) {
+          tsIdDv.longValue().toInt
+        } else throw new IllegalStateException("This shouldn't happen since every document should have a tsId")
         if (endTimeDv.advanceExact(doc)) {
           val endTimeValue = endTimeDv.longValue
           if (topkResults.size < limit) {
-            topkResults.add((partIdValue, endTimeValue))
+            topkResults.add((tsIdValue, endTimeValue))
           }
           else if (topkResults.peek._2 > endTimeValue) {
             topkResults.remove()
-            topkResults.add((partIdValue, endTimeValue))
+            topkResults.add((tsIdValue, endTimeValue))
           }
           else { // terminate further iteration on current segment by throwing this exception
             throw new CollectionTerminatedException
@@ -677,109 +676,109 @@ class TopKPartIdsCollector(limit: Int) extends Collector with StrictLogging {
 
   def needsScores(): Boolean = false
 
-  def topKPartIds(): IntIterator = {
+  def topKTsIds(): IntIterator = {
     val result = new EWAHCompressedBitmap()
     topkResults.iterator().asScala.foreach { p => result.set(p._1) }
     result.intIterator()
   }
 
-  def topKPartIDsBitmap(): EWAHCompressedBitmap = {
+  def topKTsIdsBitmap(): EWAHCompressedBitmap = {
     val result = new EWAHCompressedBitmap()
     topkResults.iterator().asScala.foreach { p => result.set(p._1) }
     result
   }
 }
 
-class PartIdCollector extends SimpleCollector {
+class TsIdCollector extends SimpleCollector {
   val result: debox.Buffer[Int] = debox.Buffer.empty[Int]
-  private var partIdDv: NumericDocValues = _
+  private var tsIdDv: NumericDocValues = _
 
   override def needsScores(): Boolean = false
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
     //set the subarray of the numeric values for all documents in the context
-    partIdDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_ID)
+    tsIdDv = context.reader().getNumericDocValues(TsKeyLuceneIndex.TS_ID)
   }
 
   override def collect(doc: Int): Unit = {
-    if (partIdDv.advanceExact(doc)) {
-      result += partIdDv.longValue().toInt
+    if (tsIdDv.advanceExact(doc)) {
+      result += tsIdDv.longValue().toInt
     } else {
-      throw new IllegalStateException("This shouldn't happen since every document should have a partIdDv")
+      throw new IllegalStateException("This shouldn't happen since every document should have a tsIdDv")
     }
   }
 }
 
-class PartIdStartTimeCollector extends SimpleCollector {
+class TsIdStartTimeCollector extends SimpleCollector {
   val startTimes = debox.Map.empty[Int, Long]
-  private var partIdDv: NumericDocValues = _
+  private var tsIdDv: NumericDocValues = _
   private var startTimeDv: NumericDocValues = _
 
   override def needsScores(): Boolean = false
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
     //set the subarray of the numeric values for all documents in the context
-    partIdDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_ID)
-    startTimeDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.START_TIME)
+    tsIdDv = context.reader().getNumericDocValues(TsKeyLuceneIndex.TS_ID)
+    startTimeDv = context.reader().getNumericDocValues(TsKeyLuceneIndex.START_TIME)
   }
 
   override def collect(doc: Int): Unit = {
-    if (partIdDv.advanceExact(doc) && startTimeDv.advanceExact(doc)) {
-      val partId = partIdDv.longValue().toInt
+    if (tsIdDv.advanceExact(doc) && startTimeDv.advanceExact(doc)) {
+      val tsd = tsIdDv.longValue().toInt
       val startTime = startTimeDv.longValue()
-      startTimes(partId) = startTime
+      startTimes(tsd) = startTime
     } else {
-      throw new IllegalStateException("This shouldn't happen since every document should have partIdDv and startTimeDv")
+      throw new IllegalStateException("This shouldn't happen since every document should have tsIdDv and startTimeDv")
     }
   }
 }
 
-class PartKeyRecordCollector extends SimpleCollector {
+class TsKeyRecordCollector extends SimpleCollector {
   val records = new ArrayBuffer[TsKeyLuceneIndexRecord]
-  private var partKeyDv: BinaryDocValues = _
+  private var tsKeyDv: BinaryDocValues = _
   private var startTimeDv: NumericDocValues = _
   private var endTimeDv: NumericDocValues = _
 
   override def needsScores(): Boolean = false
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
-    partKeyDv = context.reader().getBinaryDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_KEY)
-    startTimeDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.START_TIME)
-    endTimeDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.END_TIME)
+    tsKeyDv = context.reader().getBinaryDocValues(TsKeyLuceneIndex.TS_KEY)
+    startTimeDv = context.reader().getNumericDocValues(TsKeyLuceneIndex.START_TIME)
+    endTimeDv = context.reader().getNumericDocValues(TsKeyLuceneIndex.END_TIME)
   }
 
   override def collect(doc: Int): Unit = {
-    if (partKeyDv.advanceExact(doc) && startTimeDv.advanceExact(doc) && endTimeDv.advanceExact(doc)) {
-      val pkBytesRef = partKeyDv.binaryValue()
+    if (tsKeyDv.advanceExact(doc) && startTimeDv.advanceExact(doc) && endTimeDv.advanceExact(doc)) {
+      val pkBytesRef = tsKeyDv.binaryValue()
       // Gotcha! make copy of array because lucene reuses bytesRef for next result
       val pkBytes = util.Arrays.copyOfRange(pkBytesRef.bytes, pkBytesRef.offset, pkBytesRef.offset + pkBytesRef.length)
       records += TsKeyLuceneIndexRecord(pkBytes, startTimeDv.longValue(), endTimeDv.longValue())
     } else {
-      throw new IllegalStateException("This shouldn't happen since every document should have partIdDv and startTimeDv")
+      throw new IllegalStateException("This shouldn't happen since every document should have tsIdDv and startTimeDv")
     }
   }
 }
 
 class ActionCollector(action: (Int, BytesRef) => Unit) extends SimpleCollector {
-  private var partIdDv: NumericDocValues = _
-  private var partKeyDv: BinaryDocValues = _
+  private var tsIdDv: NumericDocValues = _
+  private var tsKeyDv: BinaryDocValues = _
   private var counter: Int = 0
 
   override def needsScores(): Boolean = false
 
   override def doSetNextReader(context: LeafReaderContext): Unit = {
-    partIdDv = context.reader().getNumericDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_ID)
-    partKeyDv = context.reader().getBinaryDocValues(TimeSeriesKeyTagValueLuceneIndex.PART_KEY)
+    tsIdDv = context.reader().getNumericDocValues(TsKeyLuceneIndex.TS_ID)
+    tsKeyDv = context.reader().getBinaryDocValues(TsKeyLuceneIndex.TS_KEY)
   }
 
   override def collect(doc: Int): Unit = {
-    if (partIdDv.advanceExact(doc) && partKeyDv.advanceExact(doc)) {
-      val partId = partIdDv.longValue().toInt
-      val partKey = partKeyDv.binaryValue()
-      action(partId, partKey)
+    if (tsIdDv.advanceExact(doc) && tsKeyDv.advanceExact(doc)) {
+      val tsId = tsIdDv.longValue().toInt
+      val tsKey = tsKeyDv.binaryValue()
+      action(tsId, tsKey)
       counter += 1
     } else {
-      throw new IllegalStateException("This shouldn't happen since every document should have a partIdDv && partKeyDv")
+      throw new IllegalStateException("This shouldn't happen since every document should have a tsIdDv && tsKeyDv")
     }
   }
 

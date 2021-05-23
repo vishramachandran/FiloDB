@@ -10,7 +10,7 @@ import spire.syntax.cfor._
 
 import filodb.core.DatasetRef
 import filodb.core.binaryrecord2.RecordBuilder
-import filodb.core.memstore.TimeSeriesKeyTagValueLuceneIndex
+import filodb.core.memstore.TsKeyLuceneIndex
 import filodb.core.metadata.Schemas.untyped
 import filodb.core.query.{ColumnFilter, Filter}
 import filodb.memory.{BinaryRegionConsumer, MemFactory}
@@ -22,7 +22,7 @@ class PartKeyIndexBenchmark {
   org.slf4j.LoggerFactory.getLogger("filodb").asInstanceOf[Logger].setLevel(Level.ERROR)
 
   val ref = DatasetRef("prometheus")
-  val partKeyIndex = new TimeSeriesKeyTagValueLuceneIndex(ref, untyped.timeseries, 0, 1.hour.toMillis)
+  val partKeyIndex = new TsKeyLuceneIndex(ref, untyped.timeseries, 0, 1.hour.toMillis)
   val numSeries = 1000000
   val ingestBuilder = new RecordBuilder(MemFactory.onHeapFactory)
   val untypedData = TestTimeseriesProducer.timeSeriesData(0, numSeries) take numSeries
@@ -31,7 +31,7 @@ class PartKeyIndexBenchmark {
   val partKeyBuilder = new RecordBuilder(MemFactory.onHeapFactory)
 
   val converter = new BinaryRegionConsumer {
-    def onNext(base: Any, offset: Long): Unit = untyped.comparator.buildPartKeyFromIngest(base, offset, partKeyBuilder)
+    def onNext(base: Any, offset: Long): Unit = untyped.comparator.buildTsKeyFromIngest(base, offset, partKeyBuilder)
   }
   // Build part keys from the ingestion records
   ingestBuilder.allContainers.head.consumeRecords(converter)
@@ -41,7 +41,7 @@ class PartKeyIndexBenchmark {
   val consumer = new BinaryRegionConsumer {
     def onNext(base: Any, offset: Long): Unit = {
       val partKey = untyped.timeseries.binSchema.asByteArray(base, offset)
-      partKeyIndex.addPartKey(partKey, partId, now)()
+      partKeyIndex.addTsKey(partKey, partId, now)()
       partId += 1
     }
   }
@@ -115,7 +115,7 @@ class PartKeyIndexBenchmark {
     cforRange ( 0 until 8 ) { i =>
       val pIds = debox.Buffer.empty[Int]
       cforRange ( i * 1000 to i * 1000 + 1000 ) { j => pIds += j }
-      partKeyIndex.startTimeFromPartIds(pIds.iterator())
+      partKeyIndex.startTimeFromTsIds(pIds.iterator())
     }
   }
 

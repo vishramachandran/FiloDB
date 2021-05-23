@@ -80,7 +80,7 @@ class HistogramIngestBenchmark {
   // NOTE: need to use per-iteration, not invocation, or else the setup costs affect the benchmark results
   @Setup(JMHLevel.Iteration)
   def cleanIngest(): Unit = {
-    println(s"hShard #partitions=${hShard.numActivePartitions}  pShard #partitions=${pShard.numActivePartitions}")
+    println(s"hShard #partitions=${hShard.numActiveTimeSeries}  pShard #partitions=${pShard.numActiveTimeSeries}")
     hShard.reset()
     pShard.reset()
     containerNo = 0

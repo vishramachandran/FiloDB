@@ -311,10 +311,10 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     val pks = pkPtrs.map(dataset1.partKeySchema.asByteArray(_))
 
     val colStore = new NullColumnStore() {
-      override def scanPartKeys(ref: DatasetRef, shard: Int): Observable[PartKeyRecord] = {
+      override def scanPartKeys(ref: DatasetRef, shard: Int): Observable[TsKeyRecord] = {
         val keys = Seq(
-          PartKeyRecord(pks(0), 50, 100, None), // series that has ended ingestion
-          PartKeyRecord(pks(1), 250, Long.MaxValue, None) // series that is currently ingesting
+          TsKeyRecord(pks(0), 50, 100, None), // series that has ended ingestion
+          TsKeyRecord(pks(1), 250, Long.MaxValue, None) // series that is currently ingesting
         )
         Observable.fromIterable(keys)
       }
@@ -336,10 +336,10 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     tsShard.tsIdToTsMap.get(1).ingesting shouldEqual true
 
     // Entries should be in part key index
-    tsShard.tsKeyTagValueIndex.startTimeFromPartId(0) shouldEqual 50
-    tsShard.tsKeyTagValueIndex.startTimeFromPartId(1) shouldEqual 250
-    tsShard.tsKeyTagValueIndex.endTimeFromPartId(0) shouldEqual 100
-    tsShard.tsKeyTagValueIndex.endTimeFromPartId(1) shouldEqual Long.MaxValue
+    tsShard.tsKeyTagValueIndex.startTimeFromTsId(0) shouldEqual 50
+    tsShard.tsKeyTagValueIndex.startTimeFromTsId(1) shouldEqual 250
+    tsShard.tsKeyTagValueIndex.endTimeFromTsId(0) shouldEqual 100
+    tsShard.tsKeyTagValueIndex.endTimeFromTsId(1) shouldEqual Long.MaxValue
     tsShard.tsKeyTagValueIndex.tsKeyFromTsId(0).get shouldEqual new BytesRef(pks(0))
     tsShard.tsKeyTagValueIndex.tsKeyFromTsId(1).get shouldEqual new BytesRef(pks(1))
 
@@ -432,7 +432,7 @@ class TimeSeriesMemStoreSpec extends AnyFunSpec with Matchers with BeforeAndAfte
     val shard = memStore.getShardE(dataset1.ref, 0)
     for { n <- partIDs } {
       val part = shard.tsIdToTsMap.get(n)
-      shard.markPartAsNotIngesting(part, false)
+      shard.markTsAsNotIngesting(part, false)
     }
   }
 

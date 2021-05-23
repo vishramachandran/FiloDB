@@ -139,21 +139,21 @@ class SchemasSpec extends AnyFunSpec with Matchers {
       val mapCol = "tags:map"
 
       // OK: only partition column is map
-      val ds1 = TimeSeriesSchema.make(Seq(mapCol), DatasetOptions.DefaultOptions).get
+      val ds1 = TsKeySchema.make(Seq(mapCol), DatasetOptions.DefaultOptions).get
       ds1.columns.map(_.name) should equal (Seq("tags"))
 
       // OK: last partition column is map
-      val ds2 = TimeSeriesSchema.make(Seq("first:string", mapCol), DatasetOptions.DefaultOptions).get
+      val ds2 = TsKeySchema.make(Seq("first:string", mapCol), DatasetOptions.DefaultOptions).get
       ds2.columns.map(_.name) should equal (Seq("first", "tags"))
 
       // Not OK: first partition column is map
-      val resp3 = TimeSeriesSchema.make(Seq(mapCol, "first:string"), DatasetOptions.DefaultOptions)
+      val resp3 = TsKeySchema.make(Seq(mapCol, "first:string"), DatasetOptions.DefaultOptions)
       resp3.isBad shouldEqual true
       resp3.swap.get shouldBe an[IllegalMapColumn]
     }
 
     it("should return BadColumnType if unsupported type specified in column spec") {
-      val resp1 = TimeSeriesSchema.make(Seq("first:strolo"), DatasetOptions.DefaultOptions)
+      val resp1 = TsKeySchema.make(Seq("first:strolo"), DatasetOptions.DefaultOptions)
       resp1.isBad shouldEqual true
       val errors = resp1.swap.get match {
         case ColumnErrors(errs) => errs
@@ -165,7 +165,7 @@ class SchemasSpec extends AnyFunSpec with Matchers {
 
     it("should parse config with options") {
       val conf2 = ConfigFactory.parseString(partSchemaStr)
-      val schema = TimeSeriesSchema.fromConfig(conf2).get
+      val schema = TsKeySchema.fromConfig(conf2).get
 
       schema.columns.map(_.columnType) shouldEqual Seq(MapColumn)
       schema.predefinedKeys shouldEqual Seq("_ns", "app", "__name__", "instance", "dc")

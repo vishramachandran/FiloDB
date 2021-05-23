@@ -12,7 +12,7 @@ import filodb.cassandra.metastore.CassandraMetaStore
 import filodb.core._
 import filodb.core.binaryrecord2.RecordBuilder
 import filodb.core.metadata.{Dataset, Schemas}
-import filodb.core.store.{ChunkSet, ChunkSetInfo, ColumnStoreSpec, PartKeyRecord}
+import filodb.core.store.{ChunkSet, ChunkSetInfo, ColumnStoreSpec, TsKeyRecord}
 import filodb.memory.{BinaryRegionLarge, NativeMemoryManager}
 import filodb.memory.format.{TupleRowReader, UnsafeUtils}
 import filodb.memory.format.ZeroCopyUTF8String._
@@ -67,21 +67,21 @@ class CassandraColumnStoreSpec extends ColumnStoreSpec {
     colStore.truncate(dataset, 1).futureValue
 
     val pks = (10000 to 30000).map(_.toString.getBytes(StandardCharsets.UTF_8))
-                              .zipWithIndex.map { case (pk, i) => PartKeyRecord(pk, 5, 10, Some(i))}.toSet
+                              .zipWithIndex.map { case (pk, i) => TsKeyRecord(pk, 5, 10, Some(i))}.toSet
 
     val updateHour = 10
-    colStore.writePartKeys(dataset, 0, Observable.fromIterable(pks), 1.hour.toSeconds.toInt, 10, true )
+    colStore.writeTsKeys(dataset, 0, Observable.fromIterable(pks), 1.hour.toSeconds.toInt, 10, true )
       .futureValue shouldEqual Success
 
-    val expectedKeys = pks.map(pk => new String(pk.partKey, StandardCharsets.UTF_8).toInt)
+    val expectedKeys = pks.map(pk => new String(pk.tsKey, StandardCharsets.UTF_8).toInt)
 
     val readData = colStore.getPartKeysByUpdateHour(dataset, 0, updateHour).toListL.runAsync.futureValue.toSet
-    readData.map(pk => new String(pk.partKey, StandardCharsets.UTF_8).toInt) shouldEqual expectedKeys
+    readData.map(pk => new String(pk.tsKey, StandardCharsets.UTF_8).toInt) shouldEqual expectedKeys
 
     val readData2 = colStore.scanPartKeys(dataset, 0).toListL.runAsync.futureValue.toSet
-    readData2.map(pk => new String(pk.partKey, StandardCharsets.UTF_8).toInt) shouldEqual expectedKeys
+    readData2.map(pk => new String(pk.tsKey, StandardCharsets.UTF_8).toInt) shouldEqual expectedKeys
 
-    readData2.map(_.partKey).foreach(pk => colStore.deletePartKeyNoAsync(dataset, 0, pk))
+    readData2.map(_.tsKey).foreach(pk => colStore.deletePartKeyNoAsync(dataset, 0, pk))
 
     val readData3 = colStore.scanPartKeys(dataset, 0).toListL.runAsync.futureValue
     readData3.isEmpty shouldEqual true

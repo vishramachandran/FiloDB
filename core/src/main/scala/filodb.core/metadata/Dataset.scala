@@ -279,7 +279,7 @@ object Dataset {
            dsSchema: Option[String] = None): Dataset Or BadSchema = {
     // Default value column is the last data column name
     val valueCol = valueColumn.getOrElse(dataColNameTypes.last.split(":").head)
-    for { partSchema <- TimeSeriesSchema.make(partitionColNameTypes, options)
+    for { partSchema <- TsKeySchema.make(partitionColNameTypes, options)
           dataSchema <- DataSchema.make(name, dataColNameTypes, downsamplerNames,
                                         downsamplePeriodMarker, valueCol, dsSchema) }
     yield { Dataset(name, Schema(partSchema, dataSchema, None)) }

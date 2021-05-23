@@ -119,7 +119,7 @@ final class RecordComparator(ingestSchema: RecordSchema) {
    * @param builder a RecordBuilder which uses the partitionKeySchema
    * @return the Long offset or native address of the new partition key BR
    */
-  final def buildPartKeyFromIngest(ingestBase: Any, ingestOffset: Long, builder: RecordBuilder): Long = {
+  final def buildTsKeyFromIngest(ingestBase: Any, ingestOffset: Long, builder: RecordBuilder): Long = {
     builder.setSchema(partitionKeySchema)
 
     // Copy fixed area + hash over, then variable areas

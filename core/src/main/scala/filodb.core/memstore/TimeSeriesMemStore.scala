@@ -84,7 +84,7 @@ extends MemStore with StrictLogging {
     */
   def refreshIndexForTesting(dataset: DatasetRef): Unit =
     datasets.get(dataset).foreach(_.values().asScala.foreach { s =>
-      s.refreshPartKeyIndexBlocking()
+      s.refreshTsKeyIndexBlocking()
       s.isReadyForQuery = true
     })
 
@@ -202,11 +202,11 @@ extends MemStore with StrictLogging {
   def partKeysWithFilters(dataset: DatasetRef, shard: Int, filters: Seq[ColumnFilter],
                           fetchFirstLastSampleTimes: Boolean, end: Long, start: Long,
                           limit: Int): Iterator[Map[ZeroCopyUTF8String, ZeroCopyUTF8String]] =
-    getShard(dataset, shard).map(_.partKeysWithFilters(filters, fetchFirstLastSampleTimes,
+    getShard(dataset, shard).map(_.tsKeysWithFilters(filters, fetchFirstLastSampleTimes,
       end, start, limit)).getOrElse(Iterator.empty)
 
   def numPartitions(dataset: DatasetRef, shard: Int): Int =
-    getShard(dataset, shard).map(_.numActivePartitions).getOrElse(-1)
+    getShard(dataset, shard).map(_.numActiveTimeSeries).getOrElse(-1)
 
   def readRawPartitions(ref: DatasetRef, maxChunkTime: Long,
                         tsMethod: TimeseriesScanMethod,
@@ -222,7 +222,7 @@ extends MemStore with StrictLogging {
       throw new IllegalArgumentException(s"Shard ${iter.shard} of dataset $ref is not assigned to " +
         s"this node. Was it was recently reassigned to another node? Prolonged occurrence indicates an issue.")
     }
-    shard.scanPartitions(iter, colIds, querySession)
+    shard.scanTimeSeries(iter, colIds, querySession)
   }
 
   def lookupPartitions(ref: DatasetRef,

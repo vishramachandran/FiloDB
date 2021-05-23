@@ -5,7 +5,7 @@ import com.typesafe.scalalogging.StrictLogging
 import org.jctools.maps.NonBlockingHashMap
 import spire.syntax.cfor._
 
-import filodb.core.Types.PartitionKey
+import filodb.core.Types.TsKeyPtr
 import filodb.core.binaryrecord2.MapItemConsumer
 import filodb.core.metadata.{Column, Dataset}
 import filodb.core.query.ColumnFilter
@@ -14,14 +14,14 @@ import filodb.memory.{UTF8StringMedium, UTF8StringShort}
 import filodb.memory.format.{ZeroCopyUTF8String => UTF8Str}
 
 trait Indexer {
-  def fromPartKey(base: Any, offset: Long, partIndex: Int): Unit
+  def fromTsKey(base: Any, offset: Long, partIndex: Int): Unit
   /** Obtains pairs of index (name, value) from a partition key */
-  def getNamesValues(key: PartitionKey): Seq[(UTF8Str, UTF8Str)]
+  def getNamesValues(key: TsKeyPtr): Seq[(UTF8Str, UTF8Str)]
 }
 
 object NoOpIndexer extends Indexer {
-  def fromPartKey(base: Any, offset: Long, partIndex: Int): Unit = {}
-  def getNamesValues(key: PartitionKey): Seq[(UTF8Str, UTF8Str)] = Nil
+  def fromTsKey(base: Any, offset: Long, partIndex: Int): Unit = {}
+  def getNamesValues(key: TsKeyPtr): Seq[(UTF8Str, UTF8Str)] = Nil
 }
 
 /**
@@ -48,18 +48,18 @@ class PartitionKeyIndex(dataset: Dataset) extends StrictLogging {
     c.columnType match {
       case StringColumn => new Indexer {
                              val colName = UTF8Str(c.name)
-                             def fromPartKey(base: Any, offset: Long, partIndex: Int): Unit = {
-                               addIndexEntry(colName, dataset.partKeySchema.asZCUTF8Str(base, offset, pos), partIndex)
+                             def fromTsKey(base: Any, offset: Long, tsIndex: Int): Unit = {
+                               addIndexEntry(colName, dataset.partKeySchema.asZCUTF8Str(base, offset, pos), tsIndex)
                              }
-                             def getNamesValues(key: PartitionKey): Seq[(UTF8Str, UTF8Str)] =
+                             def getNamesValues(key: TsKeyPtr): Seq[(UTF8Str, UTF8Str)] =
                                Seq((colName, dataset.partKeySchema.asZCUTF8Str(key, pos)))
                            }
       case MapColumn => new Indexer {
-                          def fromPartKey(base: Any, offset: Long, partIndex: Int): Unit = {
+                          def fromTsKey(base: Any, offset: Long, tsIndex: Int): Unit = {
                             dataset.partKeySchema.consumeMapItems(base, offset,
-                                                                    pos, new IndexingMapConsumer(partIndex))
+                                                                    pos, new IndexingMapConsumer(tsIndex))
                           }
-                          def getNamesValues(key: PartitionKey): Seq[(UTF8Str, UTF8Str)] = ???
+                          def getNamesValues(key: TsKeyPtr): Seq[(UTF8Str, UTF8Str)] = ???
                         }
       case other: Any =>
         logger.warn(s"Column $c has type that cannot be indexed and will be ignored right now")
@@ -70,21 +70,21 @@ class PartitionKeyIndex(dataset: Dataset) extends StrictLogging {
   /**
    * Adds fields from a partition key to the index
    */
-  def addPartKey(base: Any, offset: Long, partIndex: Int): Unit = {
+  def addPartKey(base: Any, offset: Long, tsIndex: Int): Unit = {
     cforRange { 0 until numPartColumns } { i =>
-      indexers(i).fromPartKey(base, offset, partIndex)
+      indexers(i).fromTsKey(base, offset, tsIndex)
     }
   }
 
-  private final def addIndexEntry(indexName: UTF8Str, value: UTF8Str, partIndex: Int): Unit = {
+  private final def addIndexEntry(indexName: UTF8Str, value: UTF8Str, tsIndex: Int): Unit = {
     val index = indices.getOrElseUpdate(indexName, { s => new BitmapIndex[UTF8Str](indexName) })
-    index.addEntry(value, partIndex)
+    index.addEntry(value, tsIndex)
   }
 
   /**
    * Combines (ANDs) the different columnFilters using bitmap indexing to produce a single list of
    * numeric indices given the filter conditions.  The conditions are ANDed together.
-   * @return (partitionIndices, unfoundColumnNames)
+   * @return (tsIndices, unfoundColumnNames)
    */
   def parseFilters(columnFilters: Seq[ColumnFilter]): (IntIterator, Seq[String]) = {
     val bitmapsAndUnfoundeds = columnFilters.map { case ColumnFilter(colName, filter) =>

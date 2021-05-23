@@ -11,7 +11,7 @@ import filodb.core.memstore.FiloSchedulers.QuerySchedName
 import filodb.core.metadata.{Dataset, Schemas}
 import filodb.core.query._
 import filodb.core.query.Filter.Equals
-import filodb.core.store.{AllChunkScan, PartKeyRecord, SingleTimeseriesScan, StoreConfig}
+import filodb.core.store.{AllChunkScan, TsKeyRecord, SingleTimeseriesScan, StoreConfig}
 import filodb.downsampler.chunk.{BatchDownsampler, Downsampler, DownsamplerSettings}
 import filodb.downsampler.index.{DSIndexJobSettings, IndexJobDriver}
 import filodb.memory.format.{PrimitiveVectorReader, UnsafeUtils}
@@ -141,8 +141,8 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val chunks = part.makeFlushChunks(offheapMem.blockMemFactory)
 
     rawColStore.write(rawDataset.ref, Observable.fromIterator(chunks)).futureValue
-    val pk = PartKeyRecord(untypedPartKeyBytes, 74372801000L, 74373042000L, Some(150))
-    rawColStore.writePartKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
+    val pk = TsKeyRecord(untypedPartKeyBytes, 74372801000L, 74373042000L, Some(150))
+    rawColStore.writeTsKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
   }
 
   it ("should write gauge data to cassandra") {
@@ -184,8 +184,8 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val chunks = part.makeFlushChunks(offheapMem.blockMemFactory)
 
     rawColStore.write(rawDataset.ref, Observable.fromIterator(chunks)).futureValue
-    val pk = PartKeyRecord(gaugePartKeyBytes, 74372801000L, 74373042000L, Some(150))
-    rawColStore.writePartKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
+    val pk = TsKeyRecord(gaugePartKeyBytes, 74372801000L, 74373042000L, Some(150))
+    rawColStore.writeTsKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
   }
 
   it ("should write low freq gauge data to cassandra") {
@@ -225,8 +225,8 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val chunks = part.makeFlushChunks(offheapMem.blockMemFactory)
 
     rawColStore.write(rawDataset.ref, Observable.fromIterator(chunks)).futureValue
-    val pk = PartKeyRecord(gaugeLowFreqPartKeyBytes, 74372801000L, 74373042000L, Some(150))
-    rawColStore.writePartKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
+    val pk = TsKeyRecord(gaugeLowFreqPartKeyBytes, 74372801000L, 74373042000L, Some(150))
+    rawColStore.writeTsKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
   }
 
   it ("should write prom counter data to cassandra") {
@@ -272,8 +272,8 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val chunks = part.makeFlushChunks(offheapMem.blockMemFactory)
 
     rawColStore.write(rawDataset.ref, Observable.fromIterator(chunks)).futureValue
-    val pk = PartKeyRecord(counterPartKeyBytes, 74372801000L, 74373042000L, Some(1))
-    rawColStore.writePartKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
+    val pk = TsKeyRecord(counterPartKeyBytes, 74372801000L, 74373042000L, Some(1))
+    rawColStore.writeTsKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
   }
 
   it ("should write prom histogram data to cassandra") {
@@ -320,8 +320,8 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val chunks = part.makeFlushChunks(offheapMem.blockMemFactory)
 
     rawColStore.write(rawDataset.ref, Observable.fromIterator(chunks)).futureValue
-    val pk = PartKeyRecord(histPartKeyBytes, 74372801000L, 74373042000L, Some(199))
-    rawColStore.writePartKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
+    val pk = TsKeyRecord(histPartKeyBytes, 74372801000L, 74373042000L, Some(199))
+    rawColStore.writeTsKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
   }
 
   it ("should write prom histogram data with NaNs to cassandra") {
@@ -372,8 +372,8 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
     val chunks = part.makeFlushChunks(offheapMem.blockMemFactory)
 
     rawColStore.write(rawDataset.ref, Observable.fromIterator(chunks)).futureValue
-    val pk = PartKeyRecord(histNaNPartKeyBytes, 74372801000L, 74373042000L, Some(199))
-    rawColStore.writePartKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
+    val pk = TsKeyRecord(histNaNPartKeyBytes, 74372801000L, 74373042000L, Some(199))
+    rawColStore.writeTsKeys(rawDataset.ref, 0, Observable.now(pk), 259200, pkUpdateHour).futureValue
   }
 
   val numShards = dsIndexJobSettings.numShards
@@ -385,18 +385,18 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
   it("should simulate bulk part key records being written into raw for migration") {
     val partBuilder = new RecordBuilder(offheapMem.nativeMemoryManager)
     val schemas = Seq(Schemas.promHistogram, Schemas.gauge, Schemas.promCounter)
-    case class PkToWrite(pkr: PartKeyRecord, shard: Int, updateHour: Long)
+    case class PkToWrite(pkr: TsKeyRecord, shard: Int, updateHour: Long)
     val pks = for { i <- 0 to 10000 } yield {
       val schema = schemas(i % schemas.size)
       val partKey = partBuilder.partKeyFromObjects(schema, s"bulkmetric$i", bulkSeriesTags)
       val bytes = schema.tsKeySchema.asByteArray(UnsafeUtils.ZeroPointer, partKey)
-      PkToWrite(PartKeyRecord(bytes, i, i + 500, Some(-i)), i % numShards,
+      PkToWrite(TsKeyRecord(bytes, i, i + 500, Some(-i)), i % numShards,
         bulkPkUpdateHours(i % bulkPkUpdateHours.size))
     }
 
     val rawDataset = Dataset("prometheus", Schemas.promHistogram)
     pks.groupBy(k => (k.shard, k.updateHour)).foreach { case ((shard, updHour), shardPks) =>
-      rawColStore.writePartKeys(rawDataset.ref, shard, Observable.fromIterable(shardPks).map(_.pkr),
+      rawColStore.writeTsKeys(rawDataset.ref, shard, Observable.fromIterable(shardPks).map(_.pkr),
         259200, updHour).futureValue
     }
   }
@@ -424,10 +424,10 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
 
   it ("should verify migrated partKey data and match the downsampled schema") {
 
-    def pkMetricSchemaReader(pkr: PartKeyRecord): (String, String) = {
-      val schemaId = RecordSchema.schemaID(pkr.partKey, UnsafeUtils.arayOffset)
+    def pkMetricSchemaReader(pkr: TsKeyRecord): (String, String) = {
+      val schemaId = RecordSchema.schemaID(pkr.tsKey, UnsafeUtils.arayOffset)
       val partSchema = batchDownsampler.schemas(schemaId)
-      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
+      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.tsKey, UnsafeUtils.arayOffset)
       (strPairs.find(p => p._1 == "_metric_").get._2, partSchema.data.name)
     }
 
@@ -443,8 +443,8 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
 
   it("should verify bulk part key record migration and validate completeness of PK migration") {
 
-    def pkMetricName(pkr: PartKeyRecord): String = {
-      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
+    def pkMetricName(pkr: TsKeyRecord): String = {
+      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.tsKey, UnsafeUtils.arayOffset)
       strPairs.find(p => p._1 == "_metric_").head._2
     }
     val readKeys = (0 until 4).flatMap { shard =>
@@ -983,8 +983,8 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
 
   it("should verify bulk part key records are absent after card busting by time filter in downsample tables") {
 
-    def pkMetricName(pkr: PartKeyRecord): String = {
-      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
+    def pkMetricName(pkr: TsKeyRecord): String = {
+      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.tsKey, UnsafeUtils.arayOffset)
       strPairs.find(p => p._1 == "_metric_").head._2
     }
 
@@ -1035,8 +1035,8 @@ class DownsamplerMainSpec extends AnyFunSpec with Matchers with BeforeAndAfterAl
 
   it("should verify bulk part key records are absent after deletion in both raw and downsample tables") {
 
-    def pkMetricName(pkr: PartKeyRecord): String = {
-      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.partKey, UnsafeUtils.arayOffset)
+    def pkMetricName(pkr: TsKeyRecord): String = {
+      val strPairs = batchDownsampler.schemas.ts.binSchema.toStringPairs(pkr.tsKey, UnsafeUtils.arayOffset)
       strPairs.find(p => p._1 == "_metric_").head._2
     }
 

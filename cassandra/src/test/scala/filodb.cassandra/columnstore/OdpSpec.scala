@@ -16,7 +16,7 @@ import filodb.core.memstore.FiloSchedulers.QuerySchedName
 import filodb.core.metadata.{Dataset, Schemas}
 import filodb.core.query.{ColumnFilter, EmptyQueryConfig, PlannerParams, QueryConfig, QueryContext, QuerySession}
 import filodb.core.query.Filter.Equals
-import filodb.core.store.{InMemoryMetaStore, PartKeyRecord, StoreConfig, TimeRangeChunkScan}
+import filodb.core.store.{InMemoryMetaStore, TsKeyRecord, StoreConfig, TimeRangeChunkScan}
 import filodb.memory.format.ZeroCopyUTF8String._
 import filodb.query.{QueryResponse, QueryResult}
 import filodb.query.exec.{InProcessPlanDispatcher, MultiSchemaPartitionsExec}
@@ -88,8 +88,8 @@ class OdpSpec extends AnyFunSpec with Matchers with BeforeAndAfterAll with Scala
     val chunks = part.makeFlushChunks(offheapMem.blockMemFactory)
 
     colStore.write(dataset.ref, Observable.fromIterator(chunks)).futureValue
-    val pk = PartKeyRecord(gaugePartKeyBytes, firstSampleTime, firstSampleTime + numSamples, Some(150))
-    colStore.writePartKeys(dataset.ref, 0, Observable.now(pk), 259200, 34).futureValue
+    val pk = TsKeyRecord(gaugePartKeyBytes, firstSampleTime, firstSampleTime + numSamples, Some(150))
+    colStore.writeTsKeys(dataset.ref, 0, Observable.now(pk), 259200, 34).futureValue
   }
 
   it ("should be able to do full ODP for non concurrent queries") {

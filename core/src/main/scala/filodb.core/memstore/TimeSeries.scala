@@ -5,7 +5,7 @@ import spire.syntax.cfor._
 
 import filodb.core.DatasetRef
 import filodb.core.Types._
-import filodb.core.metadata.{Column, Schema, TimeSeriesSchema}
+import filodb.core.metadata.{Column, Schema, TsKeySchema}
 import filodb.core.store._
 import filodb.memory.{BinaryRegion, BinaryRegionLarge, BlockMemFactory, NativeMemoryManager}
 import filodb.memory.data.{ChunkMap, Shutdown}
@@ -18,10 +18,10 @@ object TimeSeries extends StrictLogging {
   val nullChunks    = UnsafeUtils.ZeroPointer.asInstanceOf[AppenderArray]
   val nullInfo      = ChunkSetInfo(UnsafeUtils.ZeroPointer.asInstanceOf[BinaryRegion.NativePointer])
 
-  // Use global logger so we can save a few fields for each of millions of TSPartitions  :)
+  // Use global logger so we can save a few fields for each of millions of TimeSeries
   val _log = logger
 
-  def tsKeyString(schema: TimeSeriesSchema, tsKeyBase: Any, tsKeyOffset: Long): String = {
+  def tsKeyString(schema: TsKeySchema, tsKeyBase: Any, tsKeyOffset: Long): String = {
     schema.binSchema.stringify(tsKeyBase, tsKeyOffset)
   }
 

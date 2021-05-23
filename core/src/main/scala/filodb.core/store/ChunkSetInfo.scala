@@ -29,7 +29,7 @@ import filodb.memory.format.MemoryReader._
   * @param listener a callback for when that chunkset is successfully flushed
   */
 case class ChunkSet(info: ChunkSetInfo,
-                    partition: PartitionKey,
+                    partition: TsKeyPtr,
                     skips: Seq[ChunkRowSkipIndex],
                     chunks: Seq[ByteBuffer],
                     listener: ChunkSetInfo => Unit = info => {}) {
@@ -41,7 +41,7 @@ object ChunkSet {
    * Create a ChunkSet out of a set of rows easily.  Mostly for testing.
    * @param rows a RowReader for the data columns only - partition columns at end might be OK
    */
-  def apply(schema: DataSchema, part: PartitionKey, ingestionTime: Long,
+  def apply(schema: DataSchema, part: TsKeyPtr, ingestionTime: Long,
             rows: Seq[RowReader], factory: MemFactory): ChunkSet = {
     require(rows.nonEmpty)
     val startTime = schema.timestamp(rows.head)

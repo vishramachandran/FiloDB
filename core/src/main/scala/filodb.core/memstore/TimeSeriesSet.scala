@@ -23,7 +23,7 @@ import scala.{specialized => sp}
 
 import spire.syntax.all._
 
-import filodb.core.metadata.{TimeSeriesSchema, Schema}
+import filodb.core.metadata.{TsKeySchema, Schema}
 import filodb.core.store.FiloTimeSeries
 import filodb.memory.BinaryRegionLarge
 
@@ -197,7 +197,7 @@ final class TimeSeriesSet(as: Array[FiloTimeSeries], bs: Array[Byte], n: Int, u:
    * Searches for and returns Some(tsPartition) if a partition exists with a key matching the passed in
    * partition key BinaryRecord.  Otherwise, None is returned.
    */
-  final def getWithTsKeyBR(partBase: Any, partOffset: Long, p: TimeSeriesSchema): Option[FiloTimeSeries] = {
+  final def getWithTsKeyBR(partBase: Any, partOffset: Long, p: TsKeySchema): Option[FiloTimeSeries] = {
     @inline @tailrec def loop(i: Int, perturbation: Int): Option[FiloTimeSeries] = {
       val j = i & mask
       val status = buckets(j)

@@ -50,14 +50,14 @@ final case class DataSchema private(name: String,
 }
 
 /**
- * A PartitionSchema is the schema describing the unique "key" of each time series, such as labels.
+ * A TsKeySchema is the schema describing the unique "key" of each time series, such as labels.
  * The columns inside PartitionSchema are used for distribution and sharding, as well as filtering and searching
  * for time series during querying.
  * There should only be ONE PartitionSchema across the entire Database.
  */
-final case class TimeSeriesSchema(columns: Seq[Column],
-                                  predefinedKeys: Seq[String],
-                                  options: DatasetOptions) {
+final case class TsKeySchema(columns: Seq[Column],
+                             predefinedKeys: Seq[String],
+                             options: DatasetOptions) {
   val binSchema = new RecordSchema(columns.map(c => ColumnInfo(c.name, c.columnType)), Some(0), predefinedKeys)
   val hash = Schemas.genHash(columns)
 }
@@ -122,7 +122,7 @@ object DataSchema {
          conf.as[Option[String]]("downsample-schema"))
 }
 
-object TimeSeriesSchema {
+object TsKeySchema {
   import Dataset._
 
   /**
@@ -134,12 +134,12 @@ object TimeSeriesSchema {
    */
   def make(partColNameTypes: Seq[String],
            options: DatasetOptions,
-           predefinedKeys: Seq[String] = Seq.empty): TimeSeriesSchema Or BadSchema = {
+           predefinedKeys: Seq[String] = Seq.empty): TsKeySchema Or BadSchema = {
 
     for { partColumns  <- Column.makeColumnsFromNameTypeList(partColNameTypes, PartColStartIndex)
          _             <- validateMapColumn(partColumns, Nil) }
     yield {
-      TimeSeriesSchema(partColumns, predefinedKeys, options)
+      TsKeySchema(partColumns, predefinedKeys, options)
     }
   }
 
@@ -153,7 +153,7 @@ object TimeSeriesSchema {
    *   }
    * }}}
    */
-  def fromConfig(partConfig: Config): TimeSeriesSchema Or BadSchema =
+  def fromConfig(partConfig: Config): TsKeySchema Or BadSchema =
     make(partConfig.as[Seq[String]]("columns"),
          DatasetOptions.fromConfig(partConfig.getConfig("options")),
          partConfig.as[Option[Seq[String]]]("predefined-keys").getOrElse(Nil))
@@ -167,7 +167,7 @@ object TimeSeriesSchema {
  *
  * Important Note: Serialization will be tricky since there may be loops in object graph. Avoid if possible.
  */
-final case class Schema(timeseries: TimeSeriesSchema, data: DataSchema, var downsample: Option[Schema] = None) {
+final case class Schema(timeseries: TsKeySchema, data: DataSchema, var downsample: Option[Schema] = None) {
   val allColumns = data.columns ++ timeseries.columns
   val ingestionSchema = new RecordSchema(allColumns.map(c => ColumnInfo(c.name, c.columnType)),
                                          Some(data.columns.length),
@@ -255,7 +255,7 @@ final case class Schema(timeseries: TimeSeriesSchema, data: DataSchema, var down
 
 }
 
-final case class Schemas(ts: TimeSeriesSchema,
+final case class Schemas(ts: TsKeySchema,
                          schemas: Map[String, Schema]) {
   // A very fast array of the schemas by schemaID.  Since schemaID=16 bits, we just use a single 64K element array
   // for super fast lookup.  Schemas object should really be a singleton anyways.
@@ -432,7 +432,7 @@ object Schemas extends StrictLogging {
   def fromConfig(config: Config): Schemas Or Seq[(String, BadSchema)] = {
     val schemas = new collection.mutable.HashMap[String, Schema]
 
-    def addSchema(part: TimeSeriesSchema, schemaName: String, datas: Seq[DataSchema]): Schema = {
+    def addSchema(part: TsKeySchema, schemaName: String, datas: Seq[DataSchema]): Schema = {
       val data = datas.find(_.name == schemaName).get
       schemas.getOrElseUpdate(data.name, {
         Schema(part, data, None)
@@ -440,7 +440,7 @@ object Schemas extends StrictLogging {
     }
 
     for {
-      partSchema <- TimeSeriesSchema.fromConfig(config.getConfig("partition-schema"))
+      partSchema <- TsKeySchema.fromConfig(config.getConfig("partition-schema"))
                                    .badMap(e => Seq(("<partition>", e)))
       dataSchemas <- validateDataSchemas(config.as[Map[String, Config]]("schemas"))
     } yield {

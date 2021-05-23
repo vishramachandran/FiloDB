@@ -50,7 +50,7 @@ class TimeSeriesSetSpec extends MemFactoryCleanupTest with ScalaFutures {
   // println(s"\n---\n${ingestRecordAddrs.foreach(a => println(dataset2.ingestionSchema.stringify(a)))}")
   val partKeyBuilder = new RecordBuilder(memFactory)
   ingestRecordAddrs.foreach { addr =>
-    dataset2.comparator.buildPartKeyFromIngest(null, addr, partKeyBuilder)
+    dataset2.comparator.buildTsKeyFromIngest(null, addr, partKeyBuilder)
   }
   val partKeyAddrs = partKeyBuilder.allContainers.head.allOffsets
   // println(s"partKeyAddrs=$partKeyAddrs")

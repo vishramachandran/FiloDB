@@ -134,7 +134,7 @@ class RecordBuilder(memFactory: MemFactory,
   final def startNewRecord(schema: Schema): Unit =
     startNewRecord(schema.ingestionSchema, schema.schemaHash)
 
-  final def startNewRecord(partSchema: TimeSeriesSchema, schemaID: Int): Unit =
+  final def startNewRecord(partSchema: TsKeySchema, schemaID: Int): Unit =
     startNewRecord(partSchema.binSchema, schemaID)
 
   /**

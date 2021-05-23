@@ -21,7 +21,7 @@ import filodb.core.binaryrecord2.RecordBuilder
 import filodb.core.downsample.OffHeapMemory
 import filodb.core.memstore.{TimeSeries, TimeSeriesShardStats}
 import filodb.core.metadata.{Dataset, Schema, Schemas}
-import filodb.core.store.{PartKeyRecord, StoreConfig}
+import filodb.core.store.{TsKeyRecord, StoreConfig}
 import filodb.memory.format.ZeroCopyUTF8String._
 import filodb.memory.format.{UnsafeUtils, ZeroCopyUTF8String}
 
@@ -138,8 +138,8 @@ class PartitionKeysCopierSpec extends AnyFunSpec with Matchers with BeforeAndAft
   }
 
   def prepareTestData(colStore: CassandraColumnStore): Unit = {
-    def writePartKeys(pk: PartKeyRecord, shard: Int): Unit = {
-      colStore.writePartKeys(dataset.ref, shard, Observable.now(pk), 259200, 0L, false).futureValue
+    def writePartKeys(pk: TsKeyRecord, shard: Int): Unit = {
+      colStore.writeTsKeys(dataset.ref, shard, Observable.now(pk), 259200, 0L, false).futureValue
     }
 
     def tsPartition(schema: Schema,
@@ -171,22 +171,22 @@ class PartitionKeysCopierSpec extends AnyFunSpec with Matchers with BeforeAndAft
        */
 
       gauge1PartKeyBytes = tsPartition(Schemas.gauge, "my_gauge1", getSeriesTags(ws + "1", ns + "1")).tsKeyBytes
-      writePartKeys(PartKeyRecord(gauge1PartKeyBytes, 1507923801000L, 1510611624000L, Some(150)), shard)
+      writePartKeys(TsKeyRecord(gauge1PartKeyBytes, 1507923801000L, 1510611624000L, Some(150)), shard)
 
       gauge2PartKeyBytes = tsPartition(Schemas.gauge, "my_gauge2", getSeriesTags(ws + "2", ns + "2")).tsKeyBytes
-      writePartKeys(PartKeyRecord(gauge2PartKeyBytes, 1510611624000L, 1602561600000L, Some(150)), shard)
+      writePartKeys(TsKeyRecord(gauge2PartKeyBytes, 1510611624000L, 1602561600000L, Some(150)), shard)
 
       gauge3PartKeyBytes = tsPartition(Schemas.gauge, "my_gauge3", getSeriesTags(ws + "3", ns + "3")).tsKeyBytes
-      writePartKeys(PartKeyRecord(gauge3PartKeyBytes, 1602554400000L, 1602561600000L, Some(150)), shard)
+      writePartKeys(TsKeyRecord(gauge3PartKeyBytes, 1602554400000L, 1602561600000L, Some(150)), shard)
 
       gauge4PartKeyBytes = tsPartition(Schemas.gauge, "my_gauge4", getSeriesTags(ws + "4", ns + "4")).tsKeyBytes
-      writePartKeys(PartKeyRecord(gauge4PartKeyBytes, 1602561600000L, 1609855200000L, Some(150)), shard)
+      writePartKeys(TsKeyRecord(gauge4PartKeyBytes, 1602561600000L, 1609855200000L, Some(150)), shard)
 
       gauge5PartKeyBytes = tsPartition(Schemas.gauge, "my_gauge5", getSeriesTags(ws + "5", ns + "5")).tsKeyBytes
-      writePartKeys(PartKeyRecord(gauge5PartKeyBytes, 1609855200000L, 1610028000000L, Some(150)), shard)
+      writePartKeys(TsKeyRecord(gauge5PartKeyBytes, 1609855200000L, 1610028000000L, Some(150)), shard)
 
       gauge6PartKeyBytes = tsPartition(Schemas.gauge, "my_gauge6", getSeriesTags(ws + "6", ns + "6")).tsKeyBytes
-      writePartKeys(PartKeyRecord(gauge6PartKeyBytes, 1507923801000L, 1610028000000L, Some(150)), shard)
+      writePartKeys(TsKeyRecord(gauge6PartKeyBytes, 1507923801000L, 1610028000000L, Some(150)), shard)
     }
   }
 
@@ -201,8 +201,8 @@ class PartitionKeysCopierSpec extends AnyFunSpec with Matchers with BeforeAndAft
       ws
     }
 
-    def getPartKeyMap(partKeyRecord: PartKeyRecord) : Map[String, String] = {
-      val pk = partKeyRecord.partKey
+    def getPartKeyMap(partKeyRecord: TsKeyRecord) : Map[String, String] = {
+      val pk = partKeyRecord.tsKey
       val pkPairs = Schemas.gauge.tsKeySchema.toStringPairs(pk, UnsafeUtils.arayOffset)
       val map = pkPairs.map(a => a._1 -> a._2).toMap
       map

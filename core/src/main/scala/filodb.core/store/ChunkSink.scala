@@ -13,7 +13,7 @@ import monix.reactive.Observable
 
 import filodb.core._
 
-case class PartKeyRecord(partKey: Array[Byte], startTime: Long, endTime: Long, hash: Option[Int])
+case class TsKeyRecord(tsKey: Array[Byte], startTime: Long, endTime: Long, hash: Option[Int])
 
 /**
  * ChunkSink is the base trait for a sink, or writer to a persistent store, of chunks
@@ -34,7 +34,7 @@ trait ChunkSink {
   /**
     * Used to bootstrap lucene index with partition keys for a shard
     */
-  def scanPartKeys(ref: DatasetRef, shard: Int): Observable[PartKeyRecord]
+  def scanPartKeys(ref: DatasetRef, shard: Int): Observable[TsKeyRecord]
 
   /**
     * Used by downsample shard to do periodic pulls of new partition keys
@@ -44,11 +44,11 @@ trait ChunkSink {
     */
   def getPartKeysByUpdateHour(ref: DatasetRef,
                               shard: Int,
-                              updateHour: Long): Observable[PartKeyRecord]
+                              updateHour: Long): Observable[TsKeyRecord]
 
-  def writePartKeys(ref: DatasetRef, shard: Int,
-                    partKeys: Observable[PartKeyRecord], diskTTLSeconds: Int,
-                    updateHour: Long, writeToPkUTTable: Boolean = true): Future[Response]
+  def writeTsKeys(ref: DatasetRef, shard: Int,
+                  partKeys: Observable[TsKeyRecord], diskTTLSeconds: Int,
+                  updateHour: Long, writeToPkUTTable: Boolean = true): Future[Response]
   /**
    * Initializes the ChunkSink for a given dataset.  Must be called once before writing.
    */
@@ -118,7 +118,7 @@ class NullColumnStore(implicit sched: Scheduler) extends ColumnStore with Strict
   val stats = new ChunkSourceStats
 
   // in-memory store of partition keys
-  val partitionKeys = new ConcurrentHashMap[DatasetRef, scala.collection.mutable.Set[Types.PartitionKey]]().asScala
+  val partitionKeys = new ConcurrentHashMap[DatasetRef, scala.collection.mutable.Set[Types.TsKeyPtr]]().asScala
 
   def write(ref: DatasetRef, chunksets: Observable[ChunkSet], diskTimeToLive: Int): Future[Response] = {
     chunksets.foreach { chunkset =>
@@ -153,14 +153,14 @@ class NullColumnStore(implicit sched: Scheduler) extends ColumnStore with Strict
 
   override def getScanSplits(dataset: DatasetRef, splitsPerNode: Int): Seq[ScanSplit] = Seq.empty
 
-  override def scanPartKeys(ref: DatasetRef, shard: Int): Observable[PartKeyRecord] = Observable.empty
+  override def scanPartKeys(ref: DatasetRef, shard: Int): Observable[TsKeyRecord] = Observable.empty
 
-  override def writePartKeys(ref: DatasetRef, shard: Int,
-                             partKeys: Observable[PartKeyRecord], diskTTLSeconds: Int,
-                             updateHour: Long, writeToPkUTTable: Boolean = true): Future[Response] = {
+  override def writeTsKeys(ref: DatasetRef, shard: Int,
+                           partKeys: Observable[TsKeyRecord], diskTTLSeconds: Int,
+                           updateHour: Long, writeToPkUTTable: Boolean = true): Future[Response] = {
     partKeys.countL.map(c => sinkStats.partKeysWrite(c.toInt)).runAsync.map(_ => Success)
   }
 
   override def getPartKeysByUpdateHour(ref: DatasetRef, shard: Int,
-                                       updateHour: Long): Observable[PartKeyRecord] = Observable.empty
+                                       updateHour: Long): Observable[TsKeyRecord] = Observable.empty
 }

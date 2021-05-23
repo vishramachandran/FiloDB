@@ -10,7 +10,7 @@ import filodb.cassandra.columnstore.CassandraColumnStore
 import filodb.core.{DatasetRef, Instance}
 import filodb.core.binaryrecord2.{RecordBuilder, RecordSchema}
 import filodb.core.metadata.Schemas
-import filodb.core.store.PartKeyRecord
+import filodb.core.store.TsKeyRecord
 import filodb.downsampler.DownsamplerContext
 import filodb.downsampler.chunk.DownsamplerSettings
 import filodb.memory.format.UnsafeUtils
@@ -89,12 +89,12 @@ class DSIndexJob(dsSettings: DownsamplerSettings,
     }
   }
 
-  def migrateWithDownsamplePartKeys(partKeys: Observable[PartKeyRecord], shard: Int): Int = {
+  def migrateWithDownsamplePartKeys(partKeys: Observable[TsKeyRecord], shard: Int): Int = {
     @volatile var count = 0
     val pkRecords = partKeys.filter { pk =>
-      val rawSchemaId = RecordSchema.schemaID(pk.partKey, UnsafeUtils.arayOffset)
+      val rawSchemaId = RecordSchema.schemaID(pk.tsKey, UnsafeUtils.arayOffset)
       val schema = schemas(rawSchemaId)
-      val pkPairs = schema.tsKeySchema.toStringPairs(pk.partKey, UnsafeUtils.arayOffset)
+      val pkPairs = schema.tsKeySchema.toStringPairs(pk.tsKey, UnsafeUtils.arayOffset)
       val blocked = !dsSettings.isEligibleForDownsample(pkPairs)
       val hasDownsampleSchema = schema.downsample.isDefined
       if (blocked) numPartKeysBlocked.increment()
@@ -107,7 +107,7 @@ class DSIndexJob(dsSettings: DownsamplerSettings,
       eligible
     }.map(toDownsamplePkrWithHash)
     val updateHour = System.currentTimeMillis() / 1000 / 60 / 60
-    Await.result(dsDatasource.writePartKeys(ref = dsDatasetRef, shard = shard.toInt,
+    Await.result(dsDatasource.writeTsKeys(ref = dsDatasetRef, shard = shard.toInt,
       partKeys = pkRecords,
       diskTTLSeconds = dsSettings.ttlByResolution(highestDSResolution), updateHour,
       writeToPkUTTable = false), dsSettings.cassWriteTimeout)
@@ -119,9 +119,9 @@ class DSIndexJob(dsSettings: DownsamplerSettings,
     * Builds a new PartKeyRecord with downsample schema.
     * This method will throw an exception if schema of part key does not have downsample schema
     */
-  private def toDownsamplePkrWithHash(pkRecord: PartKeyRecord): PartKeyRecord = {
-    val dsPartKey = RecordBuilder.buildDownsamplePartKey(pkRecord.partKey, schemas)
+  private def toDownsamplePkrWithHash(pkRecord: TsKeyRecord): TsKeyRecord = {
+    val dsPartKey = RecordBuilder.buildDownsamplePartKey(pkRecord.tsKey, schemas)
     val hash = Option(schemas.ts.binSchema.tsHash(dsPartKey, UnsafeUtils.arayOffset))
-    PartKeyRecord(dsPartKey.get, pkRecord.startTime, pkRecord.endTime, hash)
+    TsKeyRecord(dsPartKey.get, pkRecord.startTime, pkRecord.endTime, hash)
   }
 }

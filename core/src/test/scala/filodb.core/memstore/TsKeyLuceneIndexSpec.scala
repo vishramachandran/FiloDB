@@ -17,11 +17,11 @@ import filodb.memory.format.ZeroCopyUTF8String._
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 
-class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter {
+class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter {
   import Filter._
   import GdeltTestData._
 
-  val keyIndex = new TimeSeriesKeyTagValueLuceneIndex(dataset6.ref, dataset6.schema.timeseries, 0, 1.hour.toMillis)
+  val keyIndex = new TsKeyLuceneIndex(dataset6.ref, dataset6.schema.timeseries, 0, 1.hour.toMillis)
   val partBuilder = new RecordBuilder(TestData.nativeMem)
 
   def partKeyOnHeap(dataset: Dataset,
@@ -50,7 +50,7 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     // Add the first ten keys and row numbers
     partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
     val end = System.currentTimeMillis()
     keyIndex.refreshReadersBlocking()
@@ -90,16 +90,16 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     val pkrs = partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
       .zipWithIndex.map { case (addr, i) =>
       val pk = partKeyOnHeap(dataset6, ZeroPointer, addr)
-      keyIndex.addPartKey(pk, i, i, i + 10)()
+      keyIndex.addTsKey(pk, i, i, i + 10)()
         TsKeyLuceneIndexRecord(pk, i, i + 10)
     }
     keyIndex.refreshReadersBlocking()
 
     val filter2 = ColumnFilter("Actor2Code", Equals("GOV".utf8))
-    val result = keyIndex.partKeyRecordsFromFilters(Seq(filter2), 0, Long.MaxValue)
+    val result = keyIndex.tsKeyRecordsFromFilters(Seq(filter2), 0, Long.MaxValue)
     val expected = Seq(pkrs(7), pkrs(8), pkrs(9))
 
-    result.map(_.partKey.toSeq) shouldEqual expected.map(_.partKey.toSeq)
+    result.map(_.tsKey.toSeq) shouldEqual expected.map(_.tsKey.toSeq)
     result.map( p => (p.startTime, p.endTime)) shouldEqual expected.map( p => (p.startTime, p.endTime))
   }
 
@@ -108,15 +108,15 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
         val time = System.currentTimeMillis()
-        keyIndex.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time)()
-        if (i%2 == 0) keyIndex.upsertPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time, time + 300)()
+        keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time)()
+        if (i%2 == 0) keyIndex.upsertTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time, time + 300)()
     }
     keyIndex.refreshReadersBlocking()
 
     keyIndex.indexNumEntries shouldEqual 10
 
     val partIdsIngesting = ArrayBuffer[Int]()
-    val numHits = keyIndex.foreachPartKeyStillIngesting { (id, key) =>
+    val numHits = keyIndex.foreachTsKeyStillIngesting { (id, key) =>
       partIdsIngesting += id
     }
     numHits shouldEqual 5
@@ -131,11 +131,11 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     val partKeys = Stream.continually(readers.head).take(numPartIds).toList
     partKeyFromRecords(dataset6, records(dataset6, partKeys), Some(partBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, start + i)()
+      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, start + i)()
     }
     keyIndex.refreshReadersBlocking()
 
-    val startTimes = keyIndex.startTimeFromPartIds((0 until numPartIds).iterator)
+    val startTimes = keyIndex.startTimeFromTsIds((0 until numPartIds).iterator)
     for { i <- 0 until numPartIds} {
       startTimes(i) shouldEqual start + i
     }
@@ -148,17 +148,17 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     val partKeys = Stream.continually(readers.head).take(numPartIds).toList
     partKeyFromRecords(dataset6, records(dataset6, partKeys), Some(partBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, start + i, start + i + 100)()
+      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, start + i, start + i + 100)()
     }
     keyIndex.refreshReadersBlocking()
 
-    val pIds = keyIndex.partIdsEndedBefore(start + 200)
+    val pIds = keyIndex.tsIdsEndedBefore(start + 200)
     val pIdsList = pIds.toList()
     for { i <- 0 until numPartIds} {
       pIdsList.contains(i) shouldEqual (if (i <= 100) true else false)
     }
 
-    keyIndex.removePartKeys(pIds)
+    keyIndex.removeTsKeys(pIds)
     keyIndex.refreshReadersBlocking()
 
     for { i <- 0 until numPartIds} {
@@ -173,9 +173,9 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
       val time = System.currentTimeMillis()
-      keyIndex.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time)()
+      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time)()
       keyIndex.refreshReadersBlocking() // updates need to be able to read startTime from index, so commit
-      keyIndex.updatePartKeyWithEndTime(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time + 10000)()
+      keyIndex.updateTsKeyWithEndTime(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time + 10000)()
     }
     val end = System.currentTimeMillis()
     keyIndex.refreshReadersBlocking()
@@ -213,7 +213,7 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     // Add the first ten keys and row numbers
     partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
 
     keyIndex.refreshReadersBlocking()
@@ -231,7 +231,7 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     // Add the first ten keys and row numbers
     partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
 
     keyIndex.refreshReadersBlocking()
@@ -252,7 +252,7 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     // Add the first ten keys and row numbers
     partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
 
     keyIndex.refreshReadersBlocking()
@@ -269,9 +269,9 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
   }
 
   it("should ignore unsupported columns and return empty filter") {
-    val index2 = new TimeSeriesKeyTagValueLuceneIndex(dataset1.ref, dataset1.schema.timeseries, 0, 1.hour.toMillis)
+    val index2 = new TsKeyLuceneIndex(dataset1.ref, dataset1.schema.timeseries, 0, 1.hour.toMillis)
     partKeyFromRecords(dataset1, records(dataset1, readers.take(10))).zipWithIndex.foreach { case (addr, i) =>
-      index2.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      index2.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
     keyIndex.refreshReadersBlocking()
 
@@ -285,7 +285,7 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
       val partKeyBytes = partKeyOnHeap(dataset6, ZeroPointer, addr)
-      keyIndex.addPartKey(partKeyBytes, i, System.currentTimeMillis())()
+      keyIndex.addTsKey(partKeyBytes, i, System.currentTimeMillis())()
       keyIndex.refreshReadersBlocking()
       keyIndex.tsKeyFromTsId(i).get.bytes shouldEqual partKeyBytes
 //      keyIndex.partIdFromPartKey(new BytesRef(partKeyBytes)) shouldEqual i
@@ -297,10 +297,10 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     val addedKeys = partKeyFromRecords(dataset6, records(dataset6, readers.take(100)), Some(partBuilder))
       .zipWithIndex.map { case (addr, i) =>
         val start = Math.abs(Random.nextLong())
-        keyIndex.addPartKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, start)()
+        keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, start)()
         keyIndex.refreshReadersBlocking() // updates need to be able to read startTime from index, so commit
         val end = start + Random.nextInt()
-        keyIndex.updatePartKeyWithEndTime(partKeyOnHeap(dataset6, ZeroPointer, addr), i, end)()
+        keyIndex.updateTsKeyWithEndTime(partKeyOnHeap(dataset6, ZeroPointer, addr), i, end)()
         (end, start, i)
       }
     keyIndex.refreshReadersBlocking()
@@ -311,9 +311,9 @@ class TimeSeriesKeyTagValueLuceneIndexSpec extends AnyFunSpec with Matchers with
     } {
       val sortedKeys = addedKeys.sorted
       val dropFrom = sortedKeys.drop(from)
-      val partNums3 = keyIndex.partIdsOrderedByEndTime(limit, fromEndTime = dropFrom(0)._1)
+      val partNums3 = keyIndex.tsIdsOrderedByEndTime(limit, fromEndTime = dropFrom(0)._1)
       partNums3.toArray.toSeq shouldEqual dropFrom.map(_._3).take(limit).sorted
-      val untilTimePartIds = keyIndex.partIdsOrderedByEndTime(10, toEndTime = dropFrom(0)._1 - 1)
+      val untilTimePartIds = keyIndex.tsIdsOrderedByEndTime(10, toEndTime = dropFrom(0)._1 - 1)
       untilTimePartIds.toArray.toSeq shouldEqual sortedKeys.take(from).map(_._3).take(10).sorted
     }
   }

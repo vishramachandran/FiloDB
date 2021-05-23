@@ -9,7 +9,7 @@ import monix.reactive.Observable
 
 import filodb.cassandra.FiloCassandraConnector
 import filodb.core.{DatasetRef, Response}
-import filodb.core.store.PartKeyRecord
+import filodb.core.store.TsKeyRecord
 
 sealed class PartitionKeysByUpdateTimeTable(val dataset: DatasetRef,
                                             val connector: FiloCassandraConnector,
@@ -45,13 +45,13 @@ sealed class PartitionKeysByUpdateTimeTable(val dataset: DatasetRef,
 
 
   def writePartKey(shard: Int, updateHour: Long, split: Int,
-                   pk: PartKeyRecord, ttlSeconds: Int): Future[Response] = {
+                   pk: TsKeyRecord, ttlSeconds: Int): Future[Response] = {
     connector.execStmtWithRetries(writePartitionKeyCql.bind(
       shard: JInt, updateHour: JLong, split: JInt,
-      toBuffer(pk.partKey), pk.startTime: JLong, pk.endTime: JLong, ttlSeconds: JInt))
+      toBuffer(pk.tsKey), pk.startTime: JLong, pk.endTime: JLong, ttlSeconds: JInt))
   }
 
-  def scanPartKeys(shard: Int, updateHour: Long, split: Int): Observable[PartKeyRecord] = {
+  def scanPartKeys(shard: Int, updateHour: Long, split: Int): Observable[TsKeyRecord] = {
     session.executeAsync(readCql.bind(shard: JInt, updateHour: JLong, split: JInt))
       .toObservable.handleObservableErrors
       .map(PartitionKeysTable.rowToPartKeyRecord)

@@ -1,23 +1,24 @@
 package filodb.repair
 
-import java.{lang, util}
 import java.io.File
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
+import scala.concurrent.duration.FiniteDuration
+
 import com.typesafe.config.{Config, ConfigFactory}
 import com.typesafe.scalalogging.StrictLogging
+import java.{lang, util}
 import monix.execution.Scheduler
 import net.ceedubs.ficus.Ficus._
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
-import scala.concurrent.duration.FiniteDuration
 
 import filodb.cassandra.FiloSessionProvider
 import filodb.cassandra.columnstore.CassandraColumnStore
 import filodb.core.{DatasetRef, GlobalConfig}
 import filodb.core.metadata.Schemas
-import filodb.core.store.{PartKeyRecord, ScanSplit}
+import filodb.core.store.{ScanSplit, TsKeyRecord}
 import filodb.downsampler.chunk.DownsamplerSettings
 import filodb.memory.format.UnsafeUtils
 
@@ -76,8 +77,8 @@ class PartitionKeysCopier(conf: SparkConf) {
   private val targetSession = FiloSessionProvider.openSession(targetCassConfig)
 
   val schemas = Schemas.fromConfig(sourceConfig).get
-  private[repair] def partKeyHashFn = (partKey: PartKeyRecord) =>
-    Option(schemas.ts.binSchema.tsHash(partKey.partKey, UnsafeUtils.arayOffset))
+  private[repair] def partKeyHashFn = (partKey: TsKeyRecord) =>
+    Option(schemas.ts.binSchema.tsHash(partKey.tsKey, UnsafeUtils.arayOffset))
 
   val numOfShards: Int = sourceDatasetConfig.getInt("num-shards")
   private val isDownsampleRepair = conf.getBoolean("spark.filodb.partitionkeys.copier.isDownsampleCopy", false)

@@ -238,30 +238,30 @@ extends ColumnStore with CassandraChunkSource with StrictLogging {
                                    repairStartTime: Long,
                                    repairEndTime: Long,
                                    target: CassandraColumnStore,
-                                   partKeyHashFn: PartKeyRecord => Option[Int],
+                                   partKeyHashFn: TsKeyRecord => Option[Int],
                                    diskTimeToLiveSeconds: Int): Unit = {
-    def pkRecordWithHash(pkRecord: PartKeyRecord) = {
-      PartKeyRecord(pkRecord.partKey, pkRecord.startTime, pkRecord.endTime, partKeyHashFn(pkRecord))
+    def pkRecordWithHash(pkRecord: TsKeyRecord) = {
+      TsKeyRecord(pkRecord.tsKey, pkRecord.startTime, pkRecord.endTime, partKeyHashFn(pkRecord))
     }
 
-    def compareAndGet(sourceRec: PartKeyRecord, targetRec: PartKeyRecord): PartKeyRecord = {
+    def compareAndGet(sourceRec: TsKeyRecord, targetRec: TsKeyRecord): TsKeyRecord = {
       val startTime = // compare and get the oldest start time
         if (sourceRec.startTime < targetRec.startTime) sourceRec.startTime else targetRec.startTime
       val endTime = // compare and get the latest end time
         if (sourceRec.endTime > targetRec.endTime) sourceRec.endTime else targetRec.endTime
-      PartKeyRecord(sourceRec.partKey, startTime, endTime, None)
+      TsKeyRecord(sourceRec.tsKey, startTime, endTime, None)
     }
 
-    def copyRows(targetPartitionKeysTable: PartitionKeysTable, records: Set[PartKeyRecord], shard: Int) = {
+    def copyRows(targetPartitionKeysTable: PartitionKeysTable, records: Set[TsKeyRecord], shard: Int) = {
       val partKeys = records.map(partKeyRecord =>
-        targetPartitionKeysTable.readPartKey(partKeyRecord.partKey) match {
+        targetPartitionKeysTable.readPartKey(partKeyRecord.tsKey) match {
           case Some(targetPkr) => pkRecordWithHash(compareAndGet(partKeyRecord, targetPkr))
           case None => pkRecordWithHash(partKeyRecord)
         }
       )
       val updateHour = System.currentTimeMillis() / 1000 / 60 / 60
       Await.result(
-        target.writePartKeys(datasetRef,
+        target.writeTsKeys(datasetRef,
           shard, Observable.fromIterable(partKeys), diskTimeToLiveSeconds, updateHour),
         5.minutes
       )
@@ -423,18 +423,18 @@ extends ColumnStore with CassandraChunkSource with StrictLogging {
   def unwrapTokenRanges(wrappedRanges : Seq[TokenRange]): Seq[TokenRange] =
     wrappedRanges.flatMap(_.unwrap().asScala.toSeq)
 
-  def scanPartKeys(ref: DatasetRef, shard: Int): Observable[PartKeyRecord] = {
+  def scanPartKeys(ref: DatasetRef, shard: Int): Observable[TsKeyRecord] = {
     val table = getOrCreatePartitionKeysTable(ref, shard)
     Observable.fromIterable(getScanSplits(ref)).flatMap { tokenRange =>
       table.scanPartKeys(tokenRange.asInstanceOf[CassandraTokenRangeSplit].tokens, indexScanParallelismPerShard)
     }
   }
 
-  def writePartKeys(ref: DatasetRef,
-                    shard: Int,
-                    partKeys: Observable[PartKeyRecord],
-                    diskTTLSeconds: Int, updateHour: Long,
-                    writeToPkUTTable: Boolean = true): Future[Response] = {
+  def writeTsKeys(ref: DatasetRef,
+                  shard: Int,
+                  partKeys: Observable[TsKeyRecord],
+                  diskTTLSeconds: Int, updateHour: Long,
+                  writeToPkUTTable: Boolean = true): Future[Response] = {
     val pkTable = getOrCreatePartitionKeysTable(ref, shard)
     val pkByUTTable = getOrCreatePartitionKeysByUpdateTimeTable(ref)
     val start = System.currentTimeMillis()
@@ -480,7 +480,7 @@ extends ColumnStore with CassandraChunkSource with StrictLogging {
 
   def getPartKeysByUpdateHour(ref: DatasetRef,
                               shard: Int,
-                              updateHour: Long): Observable[PartKeyRecord] = {
+                              updateHour: Long): Observable[TsKeyRecord] = {
     val pkByUTTable = getOrCreatePartitionKeysByUpdateTimeTable(ref)
     Observable.fromIterable(0 until pkByUTNumSplits)
               .flatMap { split => pkByUTTable.scanPartKeys(shard, updateHour, split) }
