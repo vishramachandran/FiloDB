@@ -27,6 +27,7 @@ object NoOpIndexer extends Indexer {
 /**
  * A high performance index using BitmapIndex for partition keys.
  */
+@Deprecated
 class PartitionKeyIndex(dataset: Dataset) extends StrictLogging {
   import collection.JavaConverters._
 

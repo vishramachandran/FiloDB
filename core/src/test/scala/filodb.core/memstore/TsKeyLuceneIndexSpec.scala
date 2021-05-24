@@ -22,11 +22,11 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
   import GdeltTestData._
 
   val keyIndex = new TsKeyLuceneIndex(dataset6.ref, dataset6.schema.timeseries, 0, 1.hour.toMillis)
-  val partBuilder = new RecordBuilder(TestData.nativeMem)
+  val tsKeyBuilder = new RecordBuilder(TestData.nativeMem)
 
-  def partKeyOnHeap(dataset: Dataset,
-                   base: Any,
-                   offset: Long): Array[Byte] = dataset.partKeySchema.asByteArray(base, offset)
+  def tsKeyOnHeap(dataset: Dataset,
+                  base: Any,
+                  offset: Long): Array[Byte] = dataset.partKeySchema.asByteArray(base, offset)
 
   before {
     keyIndex.reset()
@@ -34,7 +34,7 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
   }
 
   after {
-    partBuilder.removeAndFreeContainers(partBuilder.allContainers.length)
+    tsKeyBuilder.removeAndFreeContainers(tsKeyBuilder.allContainers.length)
   }
 
   implicit class RichIntIterator(ii: IntIterator) {
@@ -48,9 +48,9 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
   it("should add part keys and parse filters correctly") {
     val start = System.currentTimeMillis()
     // Add the first ten keys and row numbers
-    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
+    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(tsKeyBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      keyIndex.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
     val end = System.currentTimeMillis()
     keyIndex.refreshReadersBlocking()
@@ -87,9 +87,9 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
 
   it("should fetch part key records from filters correctly") {
     // Add the first ten keys and row numbers
-    val pkrs = partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
+    val pkrs = partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(tsKeyBuilder))
       .zipWithIndex.map { case (addr, i) =>
-      val pk = partKeyOnHeap(dataset6, ZeroPointer, addr)
+      val pk = tsKeyOnHeap(dataset6, ZeroPointer, addr)
       keyIndex.addTsKey(pk, i, i, i + 10)()
         TsKeyLuceneIndexRecord(pk, i, i + 10)
     }
@@ -105,11 +105,11 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
 
     it("should upsert part keys with endtime and foreachPartKeyStillIngesting should work") {
     // Add the first ten keys and row numbers
-    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
+    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(tsKeyBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
         val time = System.currentTimeMillis()
-        keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time)()
-        if (i%2 == 0) keyIndex.upsertTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time, time + 300)()
+        keyIndex.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, time)()
+        if (i%2 == 0) keyIndex.upsertTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, time, time + 300)()
     }
     keyIndex.refreshReadersBlocking()
 
@@ -129,9 +129,9 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
     val start = System.currentTimeMillis()
     // we dont care much about the partKey here, but the startTime against partId.
     val partKeys = Stream.continually(readers.head).take(numPartIds).toList
-    partKeyFromRecords(dataset6, records(dataset6, partKeys), Some(partBuilder))
+    partKeyFromRecords(dataset6, records(dataset6, partKeys), Some(tsKeyBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, start + i)()
+      keyIndex.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, start + i)()
     }
     keyIndex.refreshReadersBlocking()
 
@@ -146,9 +146,9 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
     val start = 1000
     // we dont care much about the partKey here, but the startTime against partId.
     val partKeys = Stream.continually(readers.head).take(numPartIds).toList
-    partKeyFromRecords(dataset6, records(dataset6, partKeys), Some(partBuilder))
+    partKeyFromRecords(dataset6, records(dataset6, partKeys), Some(tsKeyBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, start + i, start + i + 100)()
+      keyIndex.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, start + i, start + i + 100)()
     }
     keyIndex.refreshReadersBlocking()
 
@@ -170,12 +170,12 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
   it("should update part keys with endtime and parse filters correctly") {
     val start = System.currentTimeMillis()
     // Add the first ten keys and row numbers
-    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
+    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(tsKeyBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
       val time = System.currentTimeMillis()
-      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time)()
+      keyIndex.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, time)()
       keyIndex.refreshReadersBlocking() // updates need to be able to read startTime from index, so commit
-      keyIndex.updateTsKeyWithEndTime(partKeyOnHeap(dataset6, ZeroPointer, addr), i, time + 10000)()
+      keyIndex.updateTsKeyWithEndTime(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, time + 10000)()
     }
     val end = System.currentTimeMillis()
     keyIndex.refreshReadersBlocking()
@@ -211,9 +211,9 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
 
   it("should parse filters with UTF8Wrapper and string correctly") {
     // Add the first ten keys and row numbers
-    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
+    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(tsKeyBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      keyIndex.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
 
     keyIndex.refreshReadersBlocking()
@@ -229,9 +229,9 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
 
   it("should obtain indexed names and values") {
     // Add the first ten keys and row numbers
-    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
+    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(tsKeyBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      keyIndex.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
 
     keyIndex.refreshReadersBlocking()
@@ -250,9 +250,9 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
 
   it("should be able to AND multiple filters together") {
     // Add the first ten keys and row numbers
-    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
+    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(tsKeyBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      keyIndex.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
 
     keyIndex.refreshReadersBlocking()
@@ -271,7 +271,7 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
   it("should ignore unsupported columns and return empty filter") {
     val index2 = new TsKeyLuceneIndex(dataset1.ref, dataset1.schema.timeseries, 0, 1.hour.toMillis)
     partKeyFromRecords(dataset1, records(dataset1, readers.take(10))).zipWithIndex.foreach { case (addr, i) =>
-      index2.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
+      index2.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, System.currentTimeMillis())()
     }
     keyIndex.refreshReadersBlocking()
 
@@ -282,9 +282,9 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
 
   it("should be able to fetch partKey from partId and partId from partKey") {
     // Add the first ten keys and row numbers
-    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(partBuilder))
+    partKeyFromRecords(dataset6, records(dataset6, readers.take(10)), Some(tsKeyBuilder))
       .zipWithIndex.foreach { case (addr, i) =>
-      val partKeyBytes = partKeyOnHeap(dataset6, ZeroPointer, addr)
+      val partKeyBytes = tsKeyOnHeap(dataset6, ZeroPointer, addr)
       keyIndex.addTsKey(partKeyBytes, i, System.currentTimeMillis())()
       keyIndex.refreshReadersBlocking()
       keyIndex.tsKeyFromTsId(i).get.bytes shouldEqual partKeyBytes
@@ -294,13 +294,13 @@ class TsKeyLuceneIndexSpec extends AnyFunSpec with Matchers with BeforeAndAfter 
 
   it("should be able to sort results by endTime, startTime") {
 
-    val addedKeys = partKeyFromRecords(dataset6, records(dataset6, readers.take(100)), Some(partBuilder))
+    val addedKeys = partKeyFromRecords(dataset6, records(dataset6, readers.take(100)), Some(tsKeyBuilder))
       .zipWithIndex.map { case (addr, i) =>
         val start = Math.abs(Random.nextLong())
-        keyIndex.addTsKey(partKeyOnHeap(dataset6, ZeroPointer, addr), i, start)()
+        keyIndex.addTsKey(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, start)()
         keyIndex.refreshReadersBlocking() // updates need to be able to read startTime from index, so commit
         val end = start + Random.nextInt()
-        keyIndex.updateTsKeyWithEndTime(partKeyOnHeap(dataset6, ZeroPointer, addr), i, end)()
+        keyIndex.updateTsKeyWithEndTime(tsKeyOnHeap(dataset6, ZeroPointer, addr), i, end)()
         (end, start, i)
       }
     keyIndex.refreshReadersBlocking()

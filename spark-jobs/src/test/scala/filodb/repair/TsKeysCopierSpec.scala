@@ -25,7 +25,7 @@ import filodb.core.store.{TsKeyRecord, StoreConfig}
 import filodb.memory.format.ZeroCopyUTF8String._
 import filodb.memory.format.{UnsafeUtils, ZeroCopyUTF8String}
 
-class PartitionKeysCopierSpec extends AnyFunSpec with Matchers with BeforeAndAfterAll with ScalaFutures {
+class TsKeysCopierSpec extends AnyFunSpec with Matchers with BeforeAndAfterAll with ScalaFutures {
   implicit val defaultPatience = PatienceConfig(timeout = Span(15, Seconds), interval = Span(250, Millis))
 
   implicit val s = monix.execution.Scheduler.Implicits.global
@@ -73,7 +73,7 @@ class PartitionKeysCopierSpec extends AnyFunSpec with Matchers with BeforeAndAft
     conf
   }
 
-  val numOfShards = PartitionKeysCopier.lookup(sparkConf).numOfShards
+  val numOfShards = TsKeysCopier.lookup(sparkConf).numOfShards
 
   // Examples: 2019-10-20T12:34:56Z  or  2019-10-20T12:34:56-08:00
   private def parseDateTime(str: String) = Instant.from(DateTimeFormatter.ISO_OFFSET_DATE_TIME.parse(str))

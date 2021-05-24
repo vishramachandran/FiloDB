@@ -22,7 +22,7 @@ import filodb.core.store.{ScanSplit, TsKeyRecord}
 import filodb.downsampler.chunk.DownsamplerSettings
 import filodb.memory.format.UnsafeUtils
 
-class PartitionKeysCopier(conf: SparkConf) {
+class TsKeysCopier(conf: SparkConf) {
 
   // Get filo config from spark conf or file.
   private def getFiloConfig(valueConf: String, filePathConf: String) = {
@@ -127,16 +127,16 @@ class PartitionKeysCopier(conf: SparkConf) {
   }
 }
 
-object PartitionKeysCopier {
+object TsKeysCopier {
 
   class ByteComparator extends java.util.Comparator[Array[Byte]] {
     def compare(a: Array[Byte], b: Array[Byte]): Int = java.util.Arrays.compareUnsigned(a, b)
   }
 
-  val cache = new java.util.TreeMap[Array[Byte], PartitionKeysCopier](new ByteComparator)
+  val cache = new java.util.TreeMap[Array[Byte], TsKeysCopier](new ByteComparator)
 
   // scalastyle: off null
-  def lookup(conf: SparkConf): PartitionKeysCopier = synchronized {
+  def lookup(conf: SparkConf): TsKeysCopier = synchronized {
     // SparkConf cannot be used as a key, so serialize it instead.
     val bout = new java.io.ByteArrayOutputStream()
     val oout = new java.io.ObjectOutputStream(bout)
@@ -146,7 +146,7 @@ object PartitionKeysCopier {
 
     var copier = cache.get(key)
     if (copier == null) {
-      copier = new PartitionKeysCopier(conf)
+      copier = new TsKeysCopier(conf)
       cache.put(key, copier)
     }
     copier
@@ -163,7 +163,7 @@ object PartitionKeysCopierMain extends App with StrictLogging {
 
   def run(conf: SparkConf): SparkSession = {
     logger.info(s"PartitionKeysCopier Spark Job Properties: ${conf.toDebugString}")
-    val copier = PartitionKeysCopier.lookup(conf)
+    val copier = TsKeysCopier.lookup(conf)
     val spark = SparkSession.builder()
       .appName("FiloDBPartitionKeysCopier")
       .config(conf)
@@ -178,7 +178,7 @@ object PartitionKeysCopierMain extends App with StrictLogging {
       spark
         .sparkContext
         .makeRDD(splits)
-        .foreachPartition(splitIter => PartitionKeysCopier.lookup(conf).copySourceToTarget(splitIter))
+        .foreachPartition(splitIter => TsKeysCopier.lookup(conf).copySourceToTarget(splitIter))
     }
     logger.info(s"PartitionKeysCopier Driver completed successfully")
     copier.shutdown()
