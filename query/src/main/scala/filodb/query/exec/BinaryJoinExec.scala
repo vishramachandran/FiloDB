@@ -1,9 +1,11 @@
 package filodb.query.exec
 
+import java.io.{File, FileInputStream, FileOutputStream}
+
 import scala.collection.mutable
 
+import com.esotericsoftware.kryo.io.{Input, Output}
 import kamon.Kamon
-import kamon.metric.MeasurementUnit
 import monix.eval.Task
 import monix.reactive.Observable
 
@@ -11,6 +13,7 @@ import filodb.core.query._
 import filodb.memory.format.{RowReader, ZeroCopyUTF8String => Utf8Str}
 import filodb.memory.format.ZeroCopyUTF8String._
 import filodb.query._
+import filodb.query.Query.kryoThreadLocal
 import filodb.query.exec.binaryOp.BinaryOperatorFunction
 
 /**
@@ -44,7 +47,8 @@ final case class BinaryJoinExec(queryContext: QueryContext,
                                 ignoring: Seq[String],
                                 include: Seq[String],
                                 metricColumn: String,
-                                outputRvRange: Option[RvRange]) extends NonLeafExecPlan {
+                                outputRvRange: Option[RvRange],
+                                numBinJoinShards: Int = 32) extends NonLeafExecPlan {
 
   require(cardinality != Cardinality.ManyToMany,
     "Many To Many cardinality is not supported for BinaryJoinExec")
@@ -65,42 +69,87 @@ final case class BinaryJoinExec(queryContext: QueryContext,
                                  schemas: Observable[(ResultSchema, Int)],
                                  querySession: QuerySession): Observable[RangeVector] = ???
 
+  private def writeToFile(qr: QueryResult, out: Array[Output]): Unit = {
+    qr.result.foreach { rv =>
+      require(rv.isInstanceOf[SerializedRangeVector])
+      val srv = rv.asInstanceOf[SerializedRangeVector]
+      val shard = Math.abs(joinKeys(srv.key).hashCode()) % out.length
+      kryoThreadLocal.get().writeObject(out(shard), rv)
+    }
+  }
+
+  private def makeTempFiles(): (Array[File], Array[Output]) = {
+    val files = Array.tabulate(numBinJoinShards) { i =>
+      File.createTempFile(s"join-$i-", queryContext.queryId)
+    }
+    val outs = files.map { f =>
+      new Output(new FileOutputStream(f))
+    }
+    (files, outs)
+  }
+
   //scalastyle:off method.length
   protected[exec] def compose(childResponses: Observable[(QueryResult, Int)],
                               firstSchema: Task[ResultSchema],
                               querySession: QuerySession): Observable[RangeVector] = {
     val span = Kamon.currentSpan()
+    val op1Files = makeTempFiles()
+    val op2Files = makeTempFiles()
+
     val taskOfResults = childResponses.map {
-      case (QueryResult(_, _, result, _, _, _), _)
-        if (result.size  > queryContext.plannerParams.joinQueryCardLimit && cardinality == Cardinality.OneToOne) =>
-        throw new BadQueryException(s"The join in this query has input cardinality of ${result.size} which" +
-          s" is more than limit of ${queryContext.plannerParams.joinQueryCardLimit}." +
-          s" Try applying more filters or reduce time range.")
-      case (QueryResult(_, _, result, _, _, _), i) => (result, i)
-    }.toListL.map { resp =>
+      case (qr, i) =>
+        if (qr.result.size > queryContext.plannerParams.joinQueryCardLimit && cardinality == Cardinality.OneToOne)
+          throw new BadQueryException(s"The join in this query has input cardinality of ${qr.result.size} which" +
+            s" is more than limit of ${queryContext.plannerParams.joinQueryCardLimit}." +
+            s" Try applying more filters or reduce time range.")
+        if (i < lhs.size) {
+          writeToFile(qr, op1Files._2)
+        } else {
+          writeToFile(qr, op2Files._2)
+        }
+    }.completedL.map { resp =>
       span.mark("binary-join-child-results-available")
-      Kamon.histogram("query-execute-time-elapsed-step1-child-results-available",
-        MeasurementUnit.time.milliseconds)
-        .withTag("plan", getClass.getSimpleName)
-        .record(Math.max(0, System.currentTimeMillis - queryContext.submitTime))
-      // NOTE: We can't require this any more, as multischema queries may result in not a QueryResult if the
-      //       filter returns empty results.  The reason is that the schema will be undefined.
-      // require(resp.size == lhs.size + rhs.size, "Did not get sufficient responses for LHS and RHS")
-      val lhsRvs = resp.filter(_._2 < lhs.size).flatMap(_._1)
-      val rhsRvs = resp.filter(_._2 >= lhs.size).flatMap(_._1)
-      // figure out which side is the "one" side
-      val (oneSide, otherSide, lhsIsOneSide) =
-        if (cardinality == Cardinality.OneToMany) (lhsRvs, rhsRvs, true)
-        else (rhsRvs, lhsRvs, false)
-      val period = oneSide.headOption.flatMap(_.outputRange)
-      // load "one" side keys in a hashmap
-      val oneSideMap = new mutable.HashMap[Map[Utf8Str, Utf8Str], RangeVector]()
-      oneSide.foreach { rv =>
+      op1Files._2.foreach(_.close())
+      op2Files._2.foreach(_.close())
+      Observable.fromIterable(op1Files._1.indices).flatMap { shard =>
+        doJoin(op1Files._1(shard), op2Files._1(shard), querySession)
+      }.guarantee(Task.eval {
+        op1Files._2.foreach(_.close())
+        op2Files._2.foreach(_.close())
+        op1Files._1.foreach(_.delete())
+        op2Files._1.foreach(_.delete())
+      })
+    }
+    Observable.fromTask(taskOfResults).flatten
+  }
+
+  // scalastyle:off null
+  private def doJoin(op1File: File, op2File: File, querySession: QuerySession): Observable[RangeVector] = {
+
+    // figure out which side is the "one" side
+    val (oneSide, otherSide, op1IsOneSide) = {
+      if (cardinality == Cardinality.OneToMany) (op1File, op2File, true)
+      else if (cardinality == Cardinality.ManyToOne) (op2File, op1File, false)
+      else if (op1File.length() < op2File.length()) (op1File, op2File, true)
+      else (op2File, op1File, false)
+    }
+
+    var oneSideInput: Input = null
+    val oneSideMap = new mutable.HashMap[Map[Utf8Str, Utf8Str], RangeVector]()
+
+    // load "one" side keys in a hashmap
+    var period: Option[RvRange] = None
+    try {
+      oneSideInput = new Input(new FileInputStream(oneSide))
+      while (!oneSideInput.eof()) {
+        val rv = kryoThreadLocal.get().readObject(oneSideInput, classOf[SerializedRangeVector])
         val jk = joinKeys(rv.key)
         // When spread changes, we need to account for multiple Range Vectors with same key coming from different shards
         // Each of these range vectors would contain data for different time ranges
         if (oneSideMap.contains(jk)) {
           val rvDupe = oneSideMap(jk)
+          if (period.isEmpty) period = rv.outputRange
+
           if (rv.key.labelValues == rvDupe.key.labelValues) {
             oneSideMap.put(jk, StitchRvsExec.stitch(rv, rvDupe, outputRvRange))
           } else {
@@ -111,11 +160,20 @@ final case class BinaryJoinExec(queryContext: QueryContext,
           oneSideMap.put(jk, rv)
         }
       }
-      // keep a hashset of result range vector keys to help ensure uniqueness of result range vectors
-      val results = new mutable.HashMap[RangeVectorKey, ResultVal]()
-      case class ResultVal(resultRv: RangeVector, stitchedOtherSide: RangeVector)
+    } finally {
+      if (oneSideInput != null) oneSideInput.close()
+    }
+
+    // keep a hashset of result range vector keys to help ensure uniqueness of result range vectors
+    val results = new mutable.HashMap[RangeVectorKey, ResultVal]()
+    case class ResultVal(resultRv: RangeVector, stitchedOtherSide: RangeVector)
+    var otherSideInput: Input = null
+    try {
       // iterate across the the "other" side which could be one or many and perform the binary operation
-      otherSide.foreach { rvOther =>
+      otherSideInput = new Input(new FileInputStream(otherSide))
+      while (!otherSideInput.eof()) {
+
+        val rvOther = kryoThreadLocal.get().readObject(otherSideInput, classOf[SerializedRangeVector])
         val jk = joinKeys(rvOther.key)
         oneSideMap.get(jk).foreach { rvOne =>
           val resKey = resultKeys(rvOne.key, rvOther.key)
@@ -136,15 +194,16 @@ final case class BinaryJoinExec(queryContext: QueryContext,
             throw new BadQueryException(s"The result of this join query has cardinality ${results.size} and " +
               s"has reached the limit of ${queryContext.plannerParams.joinQueryCardLimit}. Try applying more filters.")
 
-          val res = if (lhsIsOneSide) binOp(rvOne.rows, rvOtherCorrect.rows) else binOp(rvOtherCorrect.rows, rvOne.rows)
+          val res = if (op1IsOneSide) binOp(rvOne.rows, rvOtherCorrect.rows) else binOp(rvOtherCorrect.rows, rvOne.rows)
           results.put(resKey, ResultVal(IteratorBackedRangeVector(resKey, res, period), rvOtherCorrect))
         }
       }
-      // check for timeout after dealing with metadata, before dealing with numbers
-      querySession.qContext.checkQueryTimeout(this.getClass.getName)
-      Observable.fromIterable(results.values.map(_.resultRv))
+    } finally {
+      if (otherSideInput != null) oneSideInput.close()
     }
-    Observable.fromTask(taskOfResults).flatten
+    // check for timeout after dealing with metadata, before dealing with numbers
+    querySession.qContext.checkQueryTimeout(this.getClass.getName)
+    Observable.fromIterable(results.values.map(_.resultRv))
   }
 
   private def joinKeys(rvk: RangeVectorKey): Map[Utf8Str, Utf8Str] = {

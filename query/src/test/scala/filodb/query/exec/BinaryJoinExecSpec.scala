@@ -208,8 +208,8 @@ class BinaryJoinExecSpec extends AnyFunSpec with Matchers with ScalaFutures {
       .toListL.runToFuture.futureValue
 
     result.size shouldEqual 2
-    result(1).key.labelValues.contains("_pi_".utf8) shouldEqual true
-    result(0).key.labelValues.contains("_step_".utf8) shouldEqual true
+    result(0).key.labelValues.contains("_pi_".utf8) shouldEqual true
+    result(1).key.labelValues.contains("_step_".utf8) shouldEqual true
 
   }
 
@@ -282,10 +282,10 @@ class BinaryJoinExecSpec extends AnyFunSpec with Matchers with ScalaFutures {
       .toListL.runToFuture.futureValue
 
     result.size shouldEqual 4
-    Seq("_pi_".utf8, "tag1".utf8).forall(result(0).key.labelValues.contains) shouldEqual true
-    Seq("_pi_".utf8, "tag1".utf8).forall(result(1).key.labelValues.contains) shouldEqual true
-    Seq("_step_".utf8, "tag1".utf8).forall(result(2).key.labelValues.contains) shouldEqual true
-    Seq("_step_".utf8, "tag1".utf8).forall(result(3).key.labelValues.contains) shouldEqual true
+    Seq("_pi_".utf8, "tag1".utf8).forall(result(2).key.labelValues.contains) shouldEqual true
+    Seq("_pi_".utf8, "tag1".utf8).forall(result(3).key.labelValues.contains) shouldEqual true
+    Seq("_step_".utf8, "tag1".utf8).forall(result(0).key.labelValues.contains) shouldEqual true
+    Seq("_step_".utf8, "tag1".utf8).forall(result(1).key.labelValues.contains) shouldEqual true
   }
 
   it("should throw error if OneToOne cardinality passed, but OneToMany") {

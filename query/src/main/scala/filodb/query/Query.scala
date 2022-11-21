@@ -1,7 +1,11 @@
 package filodb.query
 
+import com.esotericsoftware.kryo.Kryo
+import com.twitter.chill.ScalaKryoInstantiator
 import com.typesafe.scalalogging.{Logger, StrictLogging}
 import kamon.Kamon
+
+import filodb.core.query.SerializedRangeVector
 
 /**
   * ExecPlan objects cannot have loggers as vals because they would then not be serializable.
@@ -12,4 +16,15 @@ object Query extends StrictLogging {
   val qLogger: Logger = logger
   // TODO refine with dataset tag
   protected[query] val droppedSamples = Kamon.counter("query-dropped-samples").withoutTags
+
+  val kryoThreadLocal = new ThreadLocal[Kryo]() {
+    override def initialValue(): Kryo = {
+      val instantiator = new ScalaKryoInstantiator
+      val k = instantiator.newKryo()
+      k.register(classOf[SerializedRangeVector])
+      k
+    }
+  }
+
+
 }

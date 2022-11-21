@@ -7,8 +7,9 @@ import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.duration._
 import scala.reflect.io.Directory
 
-import com.esotericsoftware.kryo.{Kryo, Serializer}
+import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
+import com.twitter.chill.ScalaKryoInstantiator
 import com.typesafe.scalalogging.StrictLogging
 import kamon.Kamon
 import kamon.metric.MeasurementUnit
@@ -42,21 +43,6 @@ case object CardinalityValue {
                           shard: Int): CardinalityRecord = {
     CardinalityRecord(shard, prefix, card.tsCount, card.activeTsCount,
                       card.childrenCount, card.childrenQuota)
-  }
-}
-
-class CardinalityNodeSerializer extends Serializer[CardinalityValue] {
-  def write(kryo: Kryo, output: Output, card: CardinalityValue): Unit = {
-    output.writeString(card.name)
-    output.writeInt(card.tsCount, true)
-    output.writeInt(card.activeTsCount, true)
-    output.writeInt(card.childrenCount, true)
-    output.writeInt(card.childrenQuota, true)
-  }
-
-  def read(kryo: Kryo, input: Input, t: Class[CardinalityValue]): CardinalityValue = {
-    CardinalityValue(input.readString(), input.readInt(true), input.readInt(true),
-                    input.readInt(true), input.readInt(true))
   }
 }
 
@@ -111,8 +97,9 @@ class RocksDbCardinalityStore(ref: DatasetRef, shard: Int) extends CardinalitySt
 
   private val kryo = new ThreadLocal[Kryo]() {
     override def initialValue(): Kryo = {
-      val k = new Kryo()
-      k.addDefaultSerializer(classOf[CardinalityValue], classOf[CardinalityNodeSerializer])
+      val instantiator = new ScalaKryoInstantiator
+      val k = instantiator.newKryo()
+      k.register(classOf[CardinalityValue])
       k
     }
   }
