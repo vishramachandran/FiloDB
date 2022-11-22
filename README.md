@@ -233,7 +233,7 @@ At this point, you should be able to confirm such a message in the server logs: 
 Now you are ready to query FiloDB for the ingested data. The following command should return matching subset of the data that was ingested by the producer.
 
 ```
-./filo-cli -Dfilodb.v2-cluster-enabled=true --host 127.0.0.1 --dataset prometheus --promql 'heap_usage{_ws_="demo", _ns_="App-2"}'
+./filo-cli -Dfilodb.v2-cluster-enabled=true --host 127.0.0.1 --dataset prometheus --promql 'heap_usage0{_ws_="demo", _ns_="App-2"}'
 ```
 
 You can also look at Cassandra to check for persisted data. Look at the tables in `filodb` and `filodb-admin` keyspaces.
@@ -433,7 +433,7 @@ Some special functions exist to aid debugging and for other purposes:
 
 Example of debugging chunk metadata using the CLI:
 
-    ./filo-cli --host 127.0.0.1 --dataset prometheus --promql '_filodb_chunkmeta_all(heap_usage{_ws_="demo",_ns_="App-0"})' --start XX --end YY
+    ./filo-cli --host 127.0.0.1 --dataset prometheus --promql '_filodb_chunkmeta_all(heap_usage0{_ws_="demo",_ns_="App-0"})' --start XX --end YY
 
 There is also a special filter, `_type_="gauge"`, to filter on only a particular type of metric or schema.  Normally, this is not necessary unless a user changes the type of metric in their application, for example from a gauge to a histogram.  The types are found in the configuration `schemas` section, and by default are `gauge`, `prom-counter`, `prom-histogram`, and `untyped`.
 

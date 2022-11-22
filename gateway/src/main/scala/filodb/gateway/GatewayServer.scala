@@ -127,14 +127,14 @@ object GatewayServer extends StrictLogging {
     val genHist = userOpts.genHistData.getOrElse(false)
     val genProm = userOpts.genPromData.getOrElse(false)
     val genDeltaHist = userOpts.genDeltaHistData.getOrElse(false)
-    var promQL = """heap_usage{_ns_="App-0",_ws_="demo"}"""
+    var promQL = """heap_usage0{_ns_="App-0",_ws_="demo"}"""
     if (genHist || genProm || genDeltaHist) {
       val startTime = System.currentTimeMillis
       logger.info(s"Generating $numSamples samples starting at $startTime....")
 
       val stream = if (genHist) TestTimeseriesProducer.genHistogramData(startTime, numSeries, promHistogram)
                    else if (genDeltaHist) TestTimeseriesProducer.genHistogramData(startTime, numSeries, deltaHistogram)
-                   else TestTimeseriesProducer.timeSeriesData(startTime, numSeries)
+                   else TestTimeseriesProducer.timeSeriesData(startTime, numSeries, numMetricNames = 1)
 
       stream.take(numSamples).foreach { rec =>
         val shard = shardMapper.ingestionShard(rec.shardKeyHash, rec.partitionKeyHash, spread)

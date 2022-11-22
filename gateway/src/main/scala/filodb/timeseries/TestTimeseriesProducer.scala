@@ -48,7 +48,7 @@ object TestTimeseriesProducer extends StrictLogging {
     val topicName = sourceConfig.getString("sourceconfig.filo-topic-name")
 
     val (producingFut, containerStream) = metricsToContainerStream(startTime, numShards, numTimeSeries,
-                                            numSamples, dataset, shardMapper, spread)
+                                            numMetricNames = 1, numSamples, dataset, shardMapper, spread)
     GatewayServer.setupKafkaProducer(sourceConfig, containerStream)
 
     logger.info(s"Started producing $numSamples messages into topic $topicName with timestamps " +
@@ -67,7 +67,7 @@ object TestTimeseriesProducer extends StrictLogging {
     logger.info(s"Finished producing $numSamples records for ${samplesDuration / 1000} seconds")
     val startQuery = startTime / 1000
     val endQuery = startQuery + (numSamples / numTimeSeries) * 10
-    val periodicPromQL = if (promQL.isEmpty) """heap_usage{_ns_="App-0",_ws_="demo"}"""
+    val periodicPromQL = if (promQL.isEmpty) """heap_usage0{_ns_="App-0",_ws_="demo"}"""
                          else promQL.get
     val query =
       s"""./filo-cli '-Dakka.remote.netty.tcp.hostname=127.0.0.1' --host 127.0.0.1 --dataset prometheus """ +
@@ -84,7 +84,7 @@ object TestTimeseriesProducer extends StrictLogging {
                             }
     logger.info(s"Samples query URL: \n$periodicSamplesUrl")
     if (!isHisto) {
-      val rawSamplesQ = URLEncoder.encode("""heap_usage{_ws_="demo",_ns_="App-0"}[2m]""",
+      val rawSamplesQ = URLEncoder.encode("""heap_usage0{_ws_="demo",_ns_="App-0"}[2m]""",
         StandardCharsets.UTF_8.toString)
       val rawSamplesUrl = s"http://localhost:8080/promql/prometheus/api/v1/query?query=$rawSamplesQ&time=$endQuery"
       logger.info(s"Raw Samples query URL: \n$rawSamplesUrl")
@@ -94,6 +94,7 @@ object TestTimeseriesProducer extends StrictLogging {
   def metricsToContainerStream(startTime: Long,
                                numShards: Int,
                                numTimeSeries: Int,
+                               numMetricNames: Int,
                                numSamples: Int,
                                dataset: Dataset,
                                shardMapper: ShardMapper,
@@ -101,7 +102,7 @@ object TestTimeseriesProducer extends StrictLogging {
     val (shardQueues, containerStream) = GatewayServer.shardingPipeline(GlobalConfig.systemConfig, numShards, dataset)
 
     val producingFut = Future {
-      timeSeriesData(startTime, numTimeSeries)
+      timeSeriesData(startTime, numTimeSeries, numMetricNames)
         .take(numSamples)
         .foreach { rec =>
           val shard = shardMapper.ingestionShard(rec.shardKeyHash, rec.partitionKeyHash, spread)
@@ -118,10 +119,10 @@ object TestTimeseriesProducer extends StrictLogging {
     * @param numTimeSeries number of instances or time series
     * @return stream of a 2-tuple (kafkaParitionId , sampleData)
     */
-  def timeSeriesData(startTime: Long, numTimeSeries: Int = 16): Stream[InputRecord] = {
+  def timeSeriesData(startTime: Long, numTimeSeries: Int = 16, numMetricNames: Int): Stream[InputRecord] = {
     // TODO For now, generating a (sinusoidal + gaussian) time series. Other generators more
     // closer to real world data can be added later.
-    Stream.from(0).map { n =>
+    Stream.from(0).flatMap { n =>
       val instance = n % numTimeSeries
       val dc = instance & oneBitMask
       val partition = (instance >> 1) & twoBitMask
@@ -140,7 +141,9 @@ object TestTimeseriesProducer extends StrictLogging {
                      "hostAlias"  -> s"H$host",
                      "instance"   -> s"Instance-$instance")
 
-      PrometheusInputRecord(tags, "heap_usage", timestamp, value)
+      (0 until numMetricNames).map { i =>
+        PrometheusInputRecord(tags, "heap_usage" + i, timestamp, value)
+      }
     }
   }
 
