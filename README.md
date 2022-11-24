@@ -223,7 +223,7 @@ You can also check the server logs at `logs/filodb-server-N.log`.
 Now run the time series generator. This will ingest 20 time series (the default) with 100 samples each into the Kafka topic with current timestamps.  The required argument is the path to the source config.  Use `--help` for all the options.
 
 ```
-./dev-gateway.sh --gen-prom-data conf/timeseries-dev-source.conf
+./dev-gateway.sh --gen-gauge-data conf/timeseries-dev-source.conf
 ```
 
 NOTE: Check logs/gateway-server.log for logs.
@@ -251,7 +251,7 @@ If the above does not work, try the following:
 ```
 
 2) `./filodb-dev-stop.sh` and restart filodb instances like above
-3) Re-run `./dev-gateway.sh --gen-prom-data`.  You can check consumption via running the `TestConsumer`, like this:  `java -Xmx4G -Dconfig.file=conf/timeseries-filodb-server.conf -cp standalone/target/scala-2.12/standalone-assembly-0.8-SNAPSHOT.jar  filodb.kafka.TestConsumer conf/timeseries-dev-source.conf`.  Also, the `memstore_rows_ingested` metric which is logged to `logs/filodb-server-N.log` should become nonzero.
+3) Re-run `./dev-gateway.sh --gen-gauge-data`.  You can check consumption via running the `TestConsumer`, like this:  `java -Xmx4G -Dconfig.file=conf/timeseries-filodb-server.conf -cp standalone/target/scala-2.12/standalone-assembly-0.8-SNAPSHOT.jar  filodb.kafka.TestConsumer conf/timeseries-dev-source.conf`.  Also, the `memstore_rows_ingested` metric which is logged to `logs/filodb-server-N.log` should become nonzero.
 
 To stop the dev server. Note that this will stop all the FiloDB servers if multiple are running.
 ```
@@ -332,7 +332,7 @@ Now if you curl the cluster status you should see 128 shards which are slowly tu
 Generate records:
 
 ```
-./dev-gateway.sh --gen-prom-data -p 5000 conf/timeseries-128shards-source.conf
+./dev-gateway.sh --gen-gauge-data -p 5000 conf/timeseries-128shards-source.conf
 ```
 
 ## Understanding the FiloDB Data Model
@@ -856,6 +856,50 @@ Another good option is generating a FlameGraph:  `-prof jmh.extras.Async:dir=/tm
 There is also a script, `run_benchmarks.sh`
 
 For running basic continuous profiling in a test environment, a simple profiler can be enabled. It periodically writes a report of the top called methods, as a percentage over a sampling interval. Methods which simply indicate that threads are blocked are excluded. See the profiler section in the filodb-defaults.conf file, and copy this section to a local configuration file.
+
+### Gatling Performance Tests
+
+Setup Cassandra schema
+
+```
+./scripts/schema-create.sh filodb_admin filodb filodb_downsample promperf 8 1,5 > /tmp/ddl.cql
+cqlsh -f /tmp/ddl.cql
+```
+
+Setup Kafka Topic
+
+```
+kafka-topics --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 8 --topic prom-perf
+```
+
+Start FiloDB Perf Server
+
+```
+java -agentpath:/Applications/YourKit-Java-Profiler-2020.9.app/Contents/Resources/bin/mac/libyjpagent.dylib=port=10001,listen=localhost \
+  -Xmx4G \
+  -Dconfig.file=conf/promperf-filodb-server.conf -Dlogback.configurationFile=conf/logback-perf.xml \
+  -Dkamon.environment.service=filodb-local1 -Dfilodb.cluster-discovery.localhost-ordinal=0 \
+  <classpath> \
+  filodb.standalone.FiloServer
+```
+
+Produce Metrics
+
+```
+java -Dlogback.configurationFile=conf/logback-dev.xml -Dconfig.file=conf/promperf-filodb-server.conf \
+   -Dkamon.prometheus.embedded-server.port=9097 \
+   <classpath> \
+   filodb.gateway.GatewayServer --gen-gauge-data \
+   -p 200 -n 1080 conf/promperf-source.conf
+```
+
+Look at the startTime and update the startTime in the Gatling Simulation
+
+Run Gatling via SBT, or you can run `GatlingDriver` from your IDE
+
+```
+sbt gatling/gatling:testOnly filodb.gatling.SumOfSotSimulation
+```
 
 ## You can help!
 

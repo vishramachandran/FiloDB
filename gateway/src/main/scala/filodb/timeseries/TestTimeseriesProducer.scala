@@ -40,7 +40,8 @@ object TestTimeseriesProducer extends StrictLogging {
     * @param startMinutesAgo the samples will carry a timestamp starting from these many minutes ago
     * @return
     */
-  def produceMetrics(sourceConfig: Config, numSamples: Int, numTimeSeries: Int, startMinutesAgo: Long): Future[Unit] = {
+  def produceMetrics(sourceConfig: Config, numMetrics: Int, numSamples: Int,
+                     numTimeSeries: Int, startMinutesAgo: Long): Future[Unit] = {
     val startTime = System.currentTimeMillis() - startMinutesAgo.minutes.toMillis
     val numShards = sourceConfig.getInt("num-shards")
     val shardMapper = new ShardMapper(numShards)
@@ -54,41 +55,32 @@ object TestTimeseriesProducer extends StrictLogging {
     logger.info(s"Started producing $numSamples messages into topic $topicName with timestamps " +
       s"from about ${(System.currentTimeMillis() - startTime) / 1000 / 60} minutes ago")
 
-    producingFut.map { _ =>
-      logQueryHelp(numSamples, numTimeSeries, startTime)
-    }
+    producingFut
   }
 
-
-  def logQueryHelp(numSamples: Int, numTimeSeries: Int,
-                   startTime: Long, isHisto: Boolean = false, promQL: Option[String] = None): Unit = {
-    val samplesDuration = (numSamples.toDouble / numTimeSeries / 6).ceil.toInt * 60L * 1000L
+  //scalastyle:off method.length
+  def logQueryHelp(dataset: String, numMetrics: Int, numSamples: Int, numTimeSeries: Int, startTime: Long,
+                   genHist: Boolean, genDeltaHist: Boolean, genGauge: Boolean): Unit = {
+    val samplesDuration = (numSamples.toDouble / numMetrics / numTimeSeries / 6).ceil.toInt * 60L * 1000L
 
     logger.info(s"Finished producing $numSamples records for ${samplesDuration / 1000} seconds")
     val startQuery = startTime / 1000
-    val endQuery = startQuery + (numSamples / numTimeSeries) * 10
-    val periodicPromQL = if (promQL.isEmpty) """heap_usage0{_ns_="App-0",_ws_="demo"}"""
-                         else promQL.get
-    val query =
-      s"""./filo-cli '-Dakka.remote.netty.tcp.hostname=127.0.0.1' --host 127.0.0.1 --dataset prometheus """ +
-      s"""--promql '$periodicPromQL' --start $startQuery --end $endQuery --limit 15"""
-    logger.info(s"Periodic Samples CLI Query : \n$query")
+    val endQuery = startQuery + (numSamples / numMetrics / numTimeSeries) * 10
+    val metricName = if (genGauge) "heap_usage0"
+                      else if (genHist) "http_request_latency"
+                      else if (genDeltaHist) "http_request_latency_delta"
 
-    val periodicSamplesQ = URLEncoder.encode(periodicPromQL, StandardCharsets.UTF_8.toString)
-    val periodicSamplesUrl = if (!isHisto) {
-                              s"http://localhost:8080/promql/prometheus/api/v1/query_range?" +
-                                s"query=$periodicSamplesQ&start=$startQuery&end=$endQuery&step=15"
-                            } else {
-                              s"http://localhost:8080/promql/prometheus/api/v1/query?" +
-                                s"query=$periodicSamplesQ&time=$endQuery&step=15"
-                            }
-    logger.info(s"Samples query URL: \n$periodicSamplesUrl")
-    if (!isHisto) {
-      val rawSamplesQ = URLEncoder.encode("""heap_usage0{_ws_="demo",_ns_="App-0"}[2m]""",
-        StandardCharsets.UTF_8.toString)
-      val rawSamplesUrl = s"http://localhost:8080/promql/prometheus/api/v1/query?query=$rawSamplesQ&time=$endQuery"
-      logger.info(s"Raw Samples query URL: \n$rawSamplesUrl")
-    }
+    val promQL = s"""$metricName{_ns_="App-0",_ws_="demo"}"""
+
+    val cliQuery =
+      s"""./filo-cli '-Dakka.remote.netty.tcp.hostname=127.0.0.1' --host 127.0.0.1 --dataset $dataset """ +
+        s"""--promql '$promQL' --start $startQuery --end $endQuery --limit 15"""
+    logger.info(s"CLI Query : \n$cliQuery")
+
+    val encodedPromQL = URLEncoder.encode(promQL, StandardCharsets.UTF_8.toString)
+    val httpQuery = s"http://localhost:8080/promql/$dataset/api/v1/query_range?" +
+        s"query=$encodedPromQL&start=$startQuery&end=$endQuery&step=15"
+    logger.info(s"HTTP Query : \n$httpQuery")
   }
 
   def metricsToContainerStream(startTime: Long,
@@ -126,7 +118,7 @@ object TestTimeseriesProducer extends StrictLogging {
       val instance = n % numTimeSeries
       val dc = instance & oneBitMask
       val partition = (instance >> 1) & twoBitMask
-      val app = (instance >> 3) & twoBitMask
+      val app = 0 // (instance >> 3) & twoBitMask // commented to get high-cardinality in one app
       val host = (instance >> 4) & twoBitMask
       val timestamp = startTime + (n.toLong / numTimeSeries) * 10000 // generate 1 sample every 10s for each instance
       val value = 15 + Math.sin(n + 1) + rand.nextGaussian()
@@ -185,7 +177,7 @@ object TestTimeseriesProducer extends StrictLogging {
       val instance = n % numTimeSeries + instanceBase
       val dc = instance & oneBitMask
       val partition = (instance >> 1) & twoBitMask
-      val app = (instance >> 3) & twoBitMask
+      val app = 0 // (instance >> 3) & twoBitMask // commented to get high-cardinality in one app
       val host = (instance >> 4) & twoBitMask
       val timestamp = startTime + (n.toLong / numTimeSeries) * 10000 // generate 1 sample every 10s for each instance
 

@@ -8,13 +8,13 @@ import io.gatling.core.structure.ChainBuilder
 import io.gatling.http.Predef._
 import org.slf4j.LoggerFactory
 
+
 /**
  * TimeRangeQuerySimulation queries mosaic-queryservice with
  * random application name and kpi with configured user count asynchronously.
  *
  */
-class SumOfSotSimulation extends Simulation {
-
+class BinaryJoinSimulation extends Simulation {
 
   object Configuration {
     val baseUrl = "http://localhost:8080"
@@ -32,7 +32,7 @@ class SumOfSotSimulation extends Simulation {
   private val jobNameFeeder = for {
     x <- 0 until Configuration.numApps
   } yield {
-      Seq(Map("query" -> s"""sum(sum_over_time(heap_usage0{_ns_="App-$x",_ws_="demo"}[5m]))""",
+      Seq(Map("query" -> s"""sum(heap_usage0{_ns_="App-$x",_ws_="demo"} + heap_usage1{_ns_="App-$x",_ws_="demo"})""",
         "queryEndPointPrefix" -> "/promql/promperf"))
   }
 

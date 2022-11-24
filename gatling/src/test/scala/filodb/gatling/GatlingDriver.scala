@@ -5,7 +5,7 @@ import io.gatling.core.config.GatlingPropertiesBuilder
 
 object GatlingDriver extends App {
 
-  val simClass = classOf[SumOfSotSimulation].getName
+  val simClass = classOf[BinaryJoinSimulation].getName
 
   val props = new GatlingPropertiesBuilder
 //  props.sourcesDirectory("./src/main/scala")
