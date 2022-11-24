@@ -196,6 +196,11 @@ object Dependencies {
     "org.apache.spark" %% "spark-sql" % sparkVersion excludeAll(excludeSlf4jLog4j, excludeZK, excludeJersey)
   )
 
+  lazy val gatlingDeps = Seq(
+      "io.gatling.highcharts" % "gatling-charts-highcharts" % "3.2.0" % "test,it",
+      "io.gatling"            % "gatling-test-framework"    % "3.2.0" % "test,it"
+  )
+
   //  lazy val stressDeps = Seq(
   //    "com.databricks"       %% "spark-csv"         % "1.3.0",
   //    scalaxyDep,

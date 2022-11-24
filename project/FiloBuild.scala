@@ -1,6 +1,7 @@
 import Dependencies._
 import FiloSettings._
 import com.typesafe.sbt.SbtMultiJvm.MultiJvmKeys.MultiJvm
+import io.gatling.sbt.GatlingPlugin
 import pl.project13.scala.sbt.JmhPlugin
 import sbt._
 import sbt.Keys._
@@ -183,5 +184,15 @@ object Submodules {
       name := "filodb-gateway",
       libraryDependencies ++= gatewayDeps,
       gatewayAssemblySettings
+    )
+
+  lazy val gatling = (project in file("gatling"))
+    .enablePlugins(GatlingPlugin)
+//    .dependsOn(core % "compile->compile; compile->test", gateway, standalone)
+    .settings(
+      commonSettings,
+      name := "filodb-gatling",
+      libraryDependencies ++= gatlingDeps,
+      publish := {}
     )
 }
