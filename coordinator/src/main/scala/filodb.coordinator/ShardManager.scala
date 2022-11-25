@@ -8,7 +8,7 @@ import com.typesafe.scalalogging.StrictLogging
 import org.scalactic._
 
 import filodb.coordinator.NodeClusterActor._
-import filodb.core.{DatasetRef, ErrorResponse, FilodbSettings, Response, Success => SuccessResponse}
+import filodb.core.{DatasetRef, ErrorResponse, Response, Success => SuccessResponse}
 import filodb.core.downsample.DownsampleConfig
 import filodb.core.metadata.Dataset
 import filodb.core.store.{AssignShardConfig, IngestionConfig, StoreConfig}

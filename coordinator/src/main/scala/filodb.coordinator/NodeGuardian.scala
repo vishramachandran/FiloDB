@@ -5,7 +5,7 @@ import scala.collection.mutable.{HashMap => MutableHashMap, Map => MMap}
 import akka.actor._
 import akka.cluster.singleton._
 
-import filodb.core.{DatasetRef, FilodbSettings}
+import filodb.core.DatasetRef
 import filodb.core.memstore.TimeSeriesStore
 import filodb.core.store.MetaStore
 

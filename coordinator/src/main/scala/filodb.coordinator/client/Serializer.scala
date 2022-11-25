@@ -7,7 +7,8 @@ import de.javakaffee.kryoserializers.UnmodifiableCollectionsSerializer
 import io.altoo.akka.serialization.kryo.DefaultKryoInitializer
 import io.altoo.akka.serialization.kryo.serializer.scala.ScalaKryo
 
-import filodb.core.{FilodbSettings, _}
+import filodb.coordinator.FilodbSettings
+import filodb.core._
 import filodb.core.binaryrecord2.{RecordSchema => RecordSchema2}
 import filodb.core.metadata.{Column, PartitionSchema, Schema, Schemas}
 import filodb.core.query.ColumnInfo

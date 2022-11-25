@@ -25,11 +25,10 @@ import org.jboss.netty.handler.ssl.util.SelfSignedCertificate
 import org.jctools.queues.MpscGrowableArrayQueue
 import org.rogach.scallop._
 
-import filodb.coordinator.{ShardMapper, StoreFactory}
+import filodb.coordinator.{FilodbSettings, ShardMapper, StoreFactory}
 import filodb.core.binaryrecord2.RecordBuilder
 import filodb.core.metadata.Dataset
 import filodb.core.metadata.Schemas.{deltaHistogram, promHistogram}
-import filodb.core.FilodbSettings
 import filodb.gateway.conversion._
 import filodb.memory.MemFactory
 import filodb.timeseries.TestTimeseriesProducer

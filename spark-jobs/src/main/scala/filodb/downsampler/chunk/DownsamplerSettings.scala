@@ -5,8 +5,7 @@ import scala.concurrent.duration._
 import com.typesafe.config.{Config, ConfigFactory}
 import net.ceedubs.ficus.Ficus._
 
-import filodb.coordinator.NodeClusterActor
-import filodb.core.FilodbSettings
+import filodb.coordinator.{FilodbSettings, NodeClusterActor}
 import filodb.core.store.{IngestionConfig, StoreConfig}
 import filodb.downsampler.DownsamplerContext
 import filodb.prometheus.ast.InstantExpression

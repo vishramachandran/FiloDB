@@ -5,7 +5,6 @@ import akka.cluster.Cluster
 import monix.execution.Scheduler
 
 import filodb.core.store.MetaStore
-import filodb.core.FilodbSettings
 
 class SupervisorSpec extends AkkaSpec {
 

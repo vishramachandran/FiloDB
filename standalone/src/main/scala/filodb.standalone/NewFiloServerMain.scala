@@ -9,7 +9,7 @@ import net.ceedubs.ficus.Ficus._
 
 import filodb.coordinator._
 import filodb.coordinator.v2.{FiloDbClusterDiscovery, NewNodeCoordinatorActor}
-import filodb.core.{FilodbSettings, GlobalConfig}
+import filodb.core.GlobalConfig
 import filodb.core.memstore.FiloSchedulers
 import filodb.http.FiloHttpServer
 

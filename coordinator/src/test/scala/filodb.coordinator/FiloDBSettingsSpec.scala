@@ -4,8 +4,6 @@ import scala.concurrent.duration._
 
 import com.typesafe.config.ConfigFactory
 
-import filodb.core.FilodbSettings
-
 class FiloDBSettingsSpec extends RunnableSpec {
   "FiloDBSettings" must {
     "have default expected settings from provided config" in {
@@ -16,7 +14,7 @@ class FiloDBSettingsSpec extends RunnableSpec {
       import settings._
       SeedNodes.size should be (1)
       InitializationTimeout should be(60.seconds)
-      StorageStrategyClass should be (StoreStrategy.TimeSeriesNullSink.fqcn)
+      StorageStrategy should be (StoreStrategy.TimeSeriesNullSink)
     }
     "have default settings" in {
       val settings = new FilodbSettings(ConfigFactory.parseString(
@@ -24,7 +22,7 @@ class FiloDBSettingsSpec extends RunnableSpec {
 
       import settings._
       SeedNodes.size should be (1)
-      StorageStrategyClass should be (StoreStrategy.TimeSeriesNullSink.fqcn)
+      StorageStrategy should be (StoreStrategy.TimeSeriesNullSink)
     }
   }
 }

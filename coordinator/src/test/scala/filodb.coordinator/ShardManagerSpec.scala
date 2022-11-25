@@ -6,7 +6,7 @@ import akka.actor.{ActorRef, Address}
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 
-import filodb.core.{DatasetRef, FilodbSettings, TestData}
+import filodb.core.{DatasetRef, TestData}
 import filodb.core.downsample.DownsampleConfig
 import filodb.core.metadata.Dataset
 import filodb.core.store.IngestionConfig

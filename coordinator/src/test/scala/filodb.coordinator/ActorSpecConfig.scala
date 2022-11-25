@@ -8,7 +8,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest._
 import org.scalatest.concurrent.{Eventually, IntegrationPatience, ScalaFutures}
 
-import filodb.core.{AbstractSpec, FilodbSettings}
+import filodb.core.AbstractSpec
 import org.scalatest.funspec.AnyFunSpecLike
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike

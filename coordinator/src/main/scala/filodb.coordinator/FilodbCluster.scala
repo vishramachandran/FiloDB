@@ -16,7 +16,7 @@ import com.typesafe.scalalogging.StrictLogging
 import kamon.Kamon
 import monix.execution.{Scheduler, UncaughtExceptionReporter}
 
-import filodb.core.{FilodbSettings, GlobalScheduler}
+import filodb.core.GlobalScheduler
 import filodb.core.memstore.FiloSchedulers
 import filodb.core.store.MetaStore
 
