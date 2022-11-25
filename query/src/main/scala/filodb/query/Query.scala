@@ -1,11 +1,12 @@
 package filodb.query
 
 import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.kryo.io.PartitionRangeVectorKeySerializer
 import com.twitter.chill.ScalaKryoInstantiator
 import com.typesafe.scalalogging.{Logger, StrictLogging}
 import kamon.Kamon
 
-import filodb.core.query.SerializedRangeVector
+import filodb.core.query.{PartitionRangeVectorKey, SerializedRangeVector}
 
 /**
   * ExecPlan objects cannot have loggers as vals because they would then not be serializable.
@@ -22,6 +23,7 @@ object Query extends StrictLogging {
       val instantiator = new ScalaKryoInstantiator
       val k = instantiator.newKryo()
       k.register(classOf[SerializedRangeVector])
+      k.register(classOf[PartitionRangeVectorKey], new PartitionRangeVectorKeySerializer)
       k
     }
   }
