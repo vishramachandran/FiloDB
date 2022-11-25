@@ -5,6 +5,8 @@ import akka.cluster.{Cluster, MemberStatus}
 import akka.cluster.ClusterEvent._
 import akka.event.LoggingReceive
 
+import filodb.core.FilodbSettings
+
 /** TODO handle when singleton is in handover. */
 private[coordinator] final class NodeLifecycleStrategy(settings: FilodbSettings) extends BaseActor {
 

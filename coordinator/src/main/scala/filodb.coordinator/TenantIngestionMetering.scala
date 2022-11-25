@@ -13,7 +13,7 @@ import monix.execution.Scheduler.Implicits.{global => scheduler}
 
 import filodb.coordinator.client.Client
 import filodb.coordinator.client.QueryCommands.LogicalPlan2Query
-import filodb.core.DatasetRef
+import filodb.core.{DatasetRef, FilodbSettings}
 import filodb.query.{QueryError, QueryResult, TsCardinalities}
 
 /**

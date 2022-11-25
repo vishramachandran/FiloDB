@@ -5,7 +5,7 @@ import scala.concurrent.duration.FiniteDuration
 import com.typesafe.config.Config
 import net.ceedubs.ficus.Ficus._
 
-import filodb.coordinator.FilodbSettings
+import filodb.core.FilodbSettings
 
 class HttpSettings(config: Config, val filoSettings: FilodbSettings) {
   lazy val httpServerBindHost = config.getString("filodb.http.bind-host")

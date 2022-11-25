@@ -3,6 +3,7 @@ package filodb.coordinator
 import com.typesafe.config.ConfigFactory
 
 import filodb.coordinator.v2.FiloDbClusterDiscovery
+import filodb.core.FilodbSettings
 
 // scalastyle:off null
 class FiloDbClusterDiscoverySpec extends AkkaSpec {

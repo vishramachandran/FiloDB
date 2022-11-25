@@ -5,10 +5,10 @@ import akka.http.scaladsl.model.{ContentTypes, StatusCodes}
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestProbe
 import de.heikoseeberger.akkahttpcirce.FailFastCirceSupport
-
 import scala.concurrent.duration._
+
 import filodb.coordinator._
-import filodb.core.{AsyncTest, DatasetRef, TestData}
+import filodb.core.{AsyncTest, DatasetRef, FilodbSettings, TestData}
 import filodb.core.metadata.{Dataset, Schemas}
 import filodb.query.{ExplainPlanResponse, HistSampl, Sampl, SuccessResponse}
 import org.scalatest.Ignore

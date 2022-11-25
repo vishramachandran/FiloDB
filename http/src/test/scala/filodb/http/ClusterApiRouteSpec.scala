@@ -8,7 +8,7 @@ import akka.testkit.TestProbe
 import de.heikoseeberger.akkahttpcirce.FailFastCirceSupport
 
 import filodb.coordinator._
-import filodb.core.{AsyncTest, GdeltTestData, TestData}
+import filodb.core.{AsyncTest, FilodbSettings, GdeltTestData, TestData}
 import filodb.core.store.{AssignShardConfig, UnassignShardConfig}
 import org.scalatest.funspec.AnyFunSpec
 

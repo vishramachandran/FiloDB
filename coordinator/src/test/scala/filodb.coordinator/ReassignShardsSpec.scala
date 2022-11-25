@@ -7,7 +7,7 @@ import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 
 import filodb.coordinator.NodeClusterActor._
-import filodb.core.{DatasetRef, Success, TestData}
+import filodb.core.{DatasetRef, FilodbSettings, Success, TestData}
 import filodb.core.downsample.DownsampleConfig
 import filodb.core.metadata.Dataset
 import filodb.core.store.{AssignShardConfig, IngestionConfig, UnassignShardConfig}

@@ -9,7 +9,7 @@ import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.Ignore
 
 import filodb.coordinator.client.MiscCommands
-import filodb.core.{AbstractSpec, Success}
+import filodb.core.{AbstractSpec, FilodbSettings, Success}
 
 trait SocketChecker {
   def waitSocketOpen(port: Int): Unit = {

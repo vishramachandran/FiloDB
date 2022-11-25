@@ -14,8 +14,8 @@ import com.typesafe.scalalogging.StrictLogging
 import monix.execution.{CancelableFuture, Scheduler}
 import monix.reactive.Observable
 
-import filodb.coordinator.{CurrentShardSnapshot, FilodbSettings, ShardMapper}
-import filodb.core.DatasetRef
+import filodb.coordinator.{CurrentShardSnapshot, ShardMapper}
+import filodb.core.{DatasetRef, FilodbSettings}
 
 class FiloDbClusterDiscovery(settings: FilodbSettings,
                              system: ActorSystem,

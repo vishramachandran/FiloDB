@@ -6,7 +6,8 @@ import scala.concurrent.duration._
 import com.typesafe.config.ConfigFactory
 import monix.execution.Scheduler
 
-import filodb.coordinator.{FilodbSettings, IngestionStreamFactory, StoreFactory}
+import filodb.coordinator.{IngestionStreamFactory, StoreFactory}
+import filodb.core.FilodbSettings
 import filodb.core.memstore.SomeData
 import filodb.core.store.IngestionConfig
 

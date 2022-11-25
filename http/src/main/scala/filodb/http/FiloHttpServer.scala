@@ -14,7 +14,7 @@ import akka.http.scaladsl.server.Route
 import akka.stream.ActorMaterializer
 import com.typesafe.scalalogging.StrictLogging
 
-import filodb.coordinator.FilodbSettings
+import filodb.core.FilodbSettings
 
 trait FiloRoute {
   def route: Route
