@@ -512,7 +512,7 @@ Example:
           "shard": "1",
           "__name__": "memstore_rows_ingested_total",
           "dataset": "prometheus",
-          "_ws_": "demo"
+          "_ws_": "demo",
           "_ns_": "filodb"
         },
         "values": [
@@ -548,7 +548,7 @@ Example:
           "shard": "0",
           "__name__": "memstore_rows_ingested_total",
           "dataset": "prometheus",
-          "_ws_": "demo"
+          "_ws_": "demo",
           "_ns_": "filodb"
         },
         "values": [
@@ -859,6 +859,8 @@ For running basic continuous profiling in a test environment, a simple profiler 
 
 ### Gatling Performance Tests
 
+Use this section to setup performance tests locally to compare query throughput and latencies to do query optimization.
+
 Setup Cassandra schema
 
 ```
@@ -872,8 +874,14 @@ Setup Kafka Topic
 kafka-topics --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 8 --topic prom-perf
 ```
 
-Start FiloDB Perf Server
+Before each clear the cassandra tables to ensure same baseline for apples-to-apples comparison:
 
+```
+./scripts/schema-truncate.sh filodb_admin filodb filodb_downsample promperf 8 1,5 > /tmp/ddl.cql
+cqlsh -f /tmp/ddl.cql
+```
+
+Start FiloDB Perf Server
 ```
 java -agentpath:/Applications/YourKit-Java-Profiler-2020.9.app/Contents/Resources/bin/mac/libyjpagent.dylib=port=10001,listen=localhost \
   -Xmx4G \
@@ -883,23 +891,28 @@ java -agentpath:/Applications/YourKit-Java-Profiler-2020.9.app/Contents/Resource
   filodb.standalone.FiloServer
 ```
 
-Produce Metrics
-
+Produce Metrics. Generate 5000 tme series, each with 180 samples, at 60s publish interval for 2 metrics
+to the FiloDb dataset indicated by `prom-perf-source.conf` file.
 ```
 java -Dlogback.configurationFile=conf/logback-dev.xml -Dconfig.file=conf/promperf-filodb-server.conf \
    -Dkamon.prometheus.embedded-server.port=9097 \
    <classpath> \
    filodb.gateway.GatewayServer --gen-gauge-data \
-   -p 200 -n 1080 conf/promperf-source.conf
+   -p 5000 -n 180 -i 60 -m 2 conf/promperf-source.conf
 ```
 
-Look at the startTime and update the startTime in the Gatling Simulation
+Update QueryRangeSimulation.Configuration code with:
+* Query Start time by looking at the output of above data generator
+* Select the query you want to run the load test on
 
-Run Gatling via SBT, or you can run `GatlingDriver` from your IDE
+Then run `GatlingDriver` from your IDE, or run Gatling via SBT with
 
 ```
-sbt gatling/gatling:testOnly filodb.gatling.SumOfSotSimulation
+sbt gatling/gatling:testOnly filodb.gatling.QueryRangeSimulation
 ```
+
+If you added profiler arguments to the FiloDB command, you can profile the code when the gatling
+job is running
 
 ## You can help!
 

@@ -41,7 +41,7 @@ object TestTimeseriesProducer extends StrictLogging {
     * @return
     */
   def produceMetrics(sourceConfig: Config, numMetrics: Int, numSamples: Int,
-                     numTimeSeries: Int, startMinutesAgo: Long): Future[Unit] = {
+                     numTimeSeries: Int, startMinutesAgo: Long, publishIntervalSec: Int): Future[Unit] = {
     val startTime = System.currentTimeMillis() - startMinutesAgo.minutes.toMillis
     val numShards = sourceConfig.getInt("num-shards")
     val shardMapper = new ShardMapper(numShards)
@@ -49,7 +49,7 @@ object TestTimeseriesProducer extends StrictLogging {
     val topicName = sourceConfig.getString("sourceconfig.filo-topic-name")
 
     val (producingFut, containerStream) = metricsToContainerStream(startTime, numShards, numTimeSeries,
-                                            numMetricNames = 1, numSamples, dataset, shardMapper, spread)
+                           numMetrics, numSamples, dataset, shardMapper, spread, publishIntervalSec)
     GatewayServer.setupKafkaProducer(sourceConfig, containerStream)
 
     logger.info(s"Started producing $numSamples messages into topic $topicName with timestamps " +
@@ -58,14 +58,13 @@ object TestTimeseriesProducer extends StrictLogging {
     producingFut
   }
 
-  //scalastyle:off method.length
-  def logQueryHelp(dataset: String, numMetrics: Int, numSamples: Int, numTimeSeries: Int, startTime: Long,
-                   genHist: Boolean, genDeltaHist: Boolean, genGauge: Boolean): Unit = {
-    val samplesDuration = (numSamples.toDouble / numMetrics / numTimeSeries / 6).ceil.toInt * 60L * 1000L
+  //scalastyle:off method.length parameter.number
+  def logQueryHelp(dataset: String, numMetrics: Int, numSamples: Int, numTimeSeries: Int, startTimeMs: Long,
+                   genHist: Boolean, genDeltaHist: Boolean, genGauge: Boolean, publishIntervalSec: Int): Unit = {
+    val startQuery = startTimeMs / 1000
+    val endQuery = startQuery + (numSamples / numMetrics / numTimeSeries) * publishIntervalSec
+    logger.info(s"Finished producing $numSamples records for ${(endQuery-startQuery).toDouble/60} minutes")
 
-    logger.info(s"Finished producing $numSamples records for ${samplesDuration / 1000} seconds")
-    val startQuery = startTime / 1000
-    val endQuery = startQuery + (numSamples / numMetrics / numTimeSeries) * 10
     val metricName = if (genGauge) "heap_usage0"
                       else if (genHist) "http_request_latency"
                       else if (genDeltaHist) "http_request_latency_delta"
@@ -83,18 +82,20 @@ object TestTimeseriesProducer extends StrictLogging {
     logger.info(s"HTTP Query : \n$httpQuery")
   }
 
-  def metricsToContainerStream(startTime: Long,
+  //scalastyle:off parameter.number
+  def metricsToContainerStream(startTimeMs: Long,
                                numShards: Int,
                                numTimeSeries: Int,
                                numMetricNames: Int,
                                numSamples: Int,
                                dataset: Dataset,
                                shardMapper: ShardMapper,
-                               spread: Int): (Future[Unit], Observable[(Int, Seq[Array[Byte]])]) = {
+                               spread: Int,
+                               publishIntervalSec: Int): (Future[Unit], Observable[(Int, Seq[Array[Byte]])]) = {
     val (shardQueues, containerStream) = GatewayServer.shardingPipeline(GlobalConfig.systemConfig, numShards, dataset)
 
     val producingFut = Future {
-      timeSeriesData(startTime, numTimeSeries, numMetricNames)
+      timeSeriesData(startTimeMs, numTimeSeries, numMetricNames, publishIntervalSec)
         .take(numSamples)
         .foreach { rec =>
           val shard = shardMapper.ingestionShard(rec.shardKeyHash, rec.partitionKeyHash, spread)
@@ -111,7 +112,10 @@ object TestTimeseriesProducer extends StrictLogging {
     * @param numTimeSeries number of instances or time series
     * @return stream of a 2-tuple (kafkaParitionId , sampleData)
     */
-  def timeSeriesData(startTime: Long, numTimeSeries: Int = 16, numMetricNames: Int): Stream[InputRecord] = {
+  def timeSeriesData(startTime: Long,
+                     numTimeSeries: Int,
+                     numMetricNames: Int,
+                     publishIntervalSec: Int): Stream[InputRecord] = {
     // TODO For now, generating a (sinusoidal + gaussian) time series. Other generators more
     // closer to real world data can be added later.
     Stream.from(0).flatMap { n =>
@@ -120,7 +124,7 @@ object TestTimeseriesProducer extends StrictLogging {
       val partition = (instance >> 1) & twoBitMask
       val app = 0 // (instance >> 3) & twoBitMask // commented to get high-cardinality in one app
       val host = (instance >> 4) & twoBitMask
-      val timestamp = startTime + (n.toLong / numTimeSeries) * 10000 // generate 1 sample every 10s for each instance
+      val timestamp = startTime + (n.toLong / numTimeSeries) * publishIntervalSec * 1000
       val value = 15 + Math.sin(n + 1) + rand.nextGaussian()
 
       val tags = Map("dc"         -> s"DC$dc",

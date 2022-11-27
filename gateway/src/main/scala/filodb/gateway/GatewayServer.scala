@@ -81,6 +81,7 @@ object GatewayServer extends StrictLogging {
     val genDeltaHistData = toggle(noshort = true, descrYes = "Generate delta-histogram-schema test data and exit")
     val genGaugeData = toggle(noshort = true, descrYes = "Generate Prometheus gauge-schema test data and exit")
     val numMetrics = opt[Int](short = 'm', default = Some(1), descr = "# of metrics - use 2 to test binary joins")
+    val publishIntervalSecs = opt[Int](short = 'i', default = Some(10), descr = "Publish interval between samples")
     verify()
   }
 
@@ -134,7 +135,8 @@ object GatewayServer extends StrictLogging {
 
       val stream = if (genHist) TestTimeseriesProducer.genHistogramData(startTime, numSeries, promHistogram)
                    else if (genDeltaHist) TestTimeseriesProducer.genHistogramData(startTime, numSeries, deltaHistogram)
-                   else TestTimeseriesProducer.timeSeriesData(startTime, numSeries, userOpts.numMetrics())
+                   else TestTimeseriesProducer.timeSeriesData(startTime, numSeries,
+                                         userOpts.numMetrics(), userOpts.publishIntervalSecs())
 
       stream.take(numSamples).foreach { rec =>
         val shard = shardMapper.ingestionShard(rec.shardKeyHash, rec.partitionKeyHash, spread)
@@ -146,7 +148,7 @@ object GatewayServer extends StrictLogging {
       }
       Thread sleep 10000
       TestTimeseriesProducer.logQueryHelp(dataset.name, userOpts.numMetrics(), numSamples, numSeries,
-        startTime, genHist, genDeltaHist, genGaugeData)
+        startTime, genHist, genDeltaHist, genGaugeData, userOpts.publishIntervalSecs())
       logger.info(s"Waited for containers to be sent, exiting...")
       sys.exit(0)
     } else {
