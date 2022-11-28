@@ -8,6 +8,7 @@ object FiloSchedulers {
   val IOSchedName = "filodb.io"
   val QuerySchedName = "query-sched"
   val PopulateChunksSched = "populate-odp-chunks"
+  val queryIOName = "query-io"
 
   val assertEnabled = GlobalConfig.systemConfig.getBoolean("filodb.scheduler.enable-assertions")
 

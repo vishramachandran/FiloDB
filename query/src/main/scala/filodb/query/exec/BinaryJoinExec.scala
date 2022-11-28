@@ -7,14 +7,35 @@ import scala.collection.mutable
 import com.esotericsoftware.kryo.io.{Input, Output}
 import kamon.Kamon
 import monix.eval.Task
-import monix.reactive.Observable
+import monix.reactive.{Observable, OverflowStrategy}
 
+import filodb.core.memstore.FiloSchedulers
 import filodb.core.query._
 import filodb.memory.format.{RowReader, ZeroCopyUTF8String => Utf8Str}
 import filodb.memory.format.ZeroCopyUTF8String._
 import filodb.query._
 import filodb.query.Query.kryoThreadLocal
 import filodb.query.exec.binaryOp.BinaryOperatorFunction
+
+//object Test extends App {
+//
+//  val task = Observable.repeat(5).take(10)
+//    .map { i => println(s"1 ${Thread.currentThread().getName} emits $i")}
+//    .completedL
+//    .map { _ =>
+//      println(s"2 ${Thread.currentThread().getName}")
+//      Observable.repeat(10).take(5)
+//        .map { i => println(s"3 ${Thread.currentThread().getName} emits $i"); i}
+//        .executeOn(Query.queryIOSched)
+//
+//    }
+//    .executeOn(Query.queryIOSched)
+//  Observable.fromTask(task).flatten.asyncBoundary(OverflowStrategy.Fail(1000))
+//    .map { i => println(s"4 ${Thread.currentThread().getName} emits $i"); i}
+//    .completedL.runToFuture(GlobalScheduler.globalImplicitScheduler)
+//  Thread.sleep(1000)
+//}
+
 
 /**
   * Binary join operator between results of lhs and rhs plan.
@@ -96,31 +117,36 @@ final case class BinaryJoinExec(queryContext: QueryContext,
     val op1Files = makeTempFiles()
     val op2Files = makeTempFiles()
 
-    val taskOfResults = childResponses.map {
-      case (qr, i) =>
+    val taskOfResults = childResponses.mapEval { case (qr, i) =>
+      Task {
         if (qr.result.size > queryContext.plannerParams.joinQueryCardLimit && cardinality == Cardinality.OneToOne)
           throw new BadQueryException(s"The join in this query has input cardinality of ${qr.result.size} which" +
             s" is more than limit of ${queryContext.plannerParams.joinQueryCardLimit}." +
             s" Try applying more filters or reduce time range.")
+        FiloSchedulers.assertThreadName(FiloSchedulers.queryIOName)
         if (i < lhs.size) {
           writeToFile(qr, op1Files._2)
         } else {
           writeToFile(qr, op2Files._2)
         }
-    }.completedL.map { resp =>
+      }.executeOn(Query.queryIOSched)
+    }.completedL.map { _ =>
+      FiloSchedulers.assertThreadName(FiloSchedulers.queryIOName)
       span.mark("binary-join-child-results-available")
       op1Files._2.foreach(_.close())
       op2Files._2.foreach(_.close())
       Observable.fromIterable(op1Files._1.indices).flatMap { shard =>
+        FiloSchedulers.assertThreadName(FiloSchedulers.queryIOName)
         doJoin(op1Files._1(shard), op2Files._1(shard), querySession)
       }.guarantee(Task.eval {
+        FiloSchedulers.assertThreadName(FiloSchedulers.queryIOName)
         op1Files._2.foreach(_.close())
         op2Files._2.foreach(_.close())
         op1Files._1.foreach(_.delete())
         op2Files._1.foreach(_.delete())
-      })
-    }
-    Observable.fromTask(taskOfResults).flatten
+      }).executeOn(Query.queryIOSched)
+    }.executeOn(Query.queryIOSched)
+    Observable.fromTask(taskOfResults).flatten.asyncBoundary(OverflowStrategy.Fail(1000)) // tune 1000 if needed
   }
 
   // scalastyle:off null

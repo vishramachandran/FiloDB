@@ -20,7 +20,7 @@ class QueryRangeSimulation extends Simulation {
     val numApps = 1
     val numUsers = 10
     val testDuration = 3.minutes
-    val startSecs = 1669580343L // Before each run, change this to the right timestamp relevant to data stored in server
+    val startSecs = 1669596236L // Before each run, change this to the right timestamp relevant to data stored in server
 
     // Uncomment one query from here:
     val queryName = "BinaryJoin"

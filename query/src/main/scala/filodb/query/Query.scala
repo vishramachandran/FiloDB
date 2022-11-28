@@ -5,9 +5,11 @@ import com.esotericsoftware.kryo.io.{PartitionRangeVectorKeySerializer, ZeroCopy
 import com.twitter.chill.ScalaKryoInstantiator
 import com.typesafe.scalalogging.{Logger, StrictLogging}
 import kamon.Kamon
+import monix.execution.{Scheduler, UncaughtExceptionReporter}
 
 import filodb.core.RecordSchema2Serializer
 import filodb.core.binaryrecord2.RecordSchema
+import filodb.core.memstore.FiloSchedulers
 import filodb.core.query.{PartitionRangeVectorKey, SerializedRangeVector}
 import filodb.memory.format.ZeroCopyUTF8String
 
@@ -31,5 +33,13 @@ object Query extends StrictLogging {
       k.addDefaultSerializer(classOf[ZeroCopyUTF8String], classOf[ZeroCopyUTF8StringSerializer])
       k
     }
+  }
+
+  val queryIOSched = {
+    val exceptionHandler = new UncaughtExceptionReporter {
+      override def reportFailure(ex: Throwable): Unit =
+        logger.error("Uncaught Exception in Query IO Scheduler", ex)
+    }
+    Scheduler.io(FiloSchedulers.queryIOName, reporter = exceptionHandler)
   }
 }
