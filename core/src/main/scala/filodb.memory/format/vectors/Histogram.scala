@@ -511,6 +511,15 @@ final case class MutableHistogram(var buckets: HistogramBuckets,
   }
 
   /**
+   * Like setEmpty, but zero-fills values so the histogram is ready to accumulate. This avoids the NaN fill followed
+   * by a second 0.0 fill on the first addNoCorrection.
+   */
+  final def setZero(newBuckets: HistogramBuckets): Unit = {
+    adoptBuckets(newBuckets)
+    java.util.Arrays.fill(values, 0.0)
+  }
+
+  /**
    * Switches to the newBuckets scheme and sizes values to match; values content is unspecified afterwards.
    * Bucket objects are never mutated in place here, since they may be shared with other histograms (for example
    * through copy()). Base2ExpHistogramBuckets are mutable and readers update theirs for every sample, so they are
@@ -805,7 +814,7 @@ final case class GeometricBuckets(firstBucket: Double,
 
   override def similarForMath(other: HistogramBuckets): Boolean = {
     other match {
-      case c: CustomBuckets => c.allBucketTops.sameElements(other.allBucketTops)
+      case c: CustomBuckets => java.util.Arrays.equals(allBucketTops, c.les)
       case _                => this == other
     }
   }
@@ -1062,15 +1071,16 @@ final case class CustomBuckets(les: Array[Double]) extends HistogramBuckets {
   }
 
   override def equals(other: Any): Boolean = other match {
-    case CustomBuckets(otherLes) => les.toSeq == otherLes.toSeq
-    case other: Any              => false
+    // Hot path: called per sample via similarForMath. Avoid les.toSeq, which copies the array in Scala 2.13.
+    case c: CustomBuckets => (c eq this) || java.util.Arrays.equals(les, c.les)
+    case _                => false
   }
 
-  override def hashCode: Int = les.hashCode
+  override def hashCode: Int = java.util.Arrays.hashCode(les)
 
   override def similarForMath(other: HistogramBuckets): Boolean = {
     other match {
-      case g: GeometricBuckets  => g.allBucketTops.sameElements(other.allBucketTops)
+      case g: GeometricBuckets  => java.util.Arrays.equals(les, g.allBucketTops)
       case _                    => this == other
     }
   }

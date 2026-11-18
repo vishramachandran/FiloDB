@@ -626,7 +626,9 @@ class RowHistogramReader(val acc: MemoryReader, histVect: Ptr.U8) extends Histog
   // NOTE: for now this is just a dumb implementation that decompresses each histogram fully
   final def sumInto(start: Int, end: Int, into: MutableHistogram): Unit = {
     require(length > 0 && start >= 0 && end < length)
-    into.setEmpty(buckets)
+    // When at least one row is summed, zero-init is equivalent to setEmpty + first add, and saves a second fill.
+    // returnHist values come from longs and are never NaN, so addNoCorrection's NaN-reset is never needed here.
+    if (start <= end) into.setZero(buckets) else into.setEmpty(buckets)
     cforRange { start to end } { i =>
       into.addNoCorrection(apply(i))
     }
