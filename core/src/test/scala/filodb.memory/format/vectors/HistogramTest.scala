@@ -82,6 +82,27 @@ class HistogramTest extends NativeVectorTest {
       HistogramBuckets(writeBuf, HistFormat_OtelExp_Delta) shouldEqual buckets4
 
     }
+
+    it("CustomBuckets equals and hashCode should be consistent and content-based") {
+      val a = CustomBuckets(Array(0.25, 0.5, 1.0, Double.PositiveInfinity))
+      val b = CustomBuckets(Array(0.25, 0.5, 1.0, Double.PositiveInfinity))
+      val c = CustomBuckets(Array(0.25, 0.5, 2.0, Double.PositiveInfinity))
+      a shouldEqual b
+      a.hashCode shouldEqual b.hashCode
+      a should not equal c
+      a should not equal GeometricBuckets(1.0, 2.0, 4)
+      Set[HistogramBuckets](a, b, c).size shouldEqual 2
+    }
+
+    it("similarForMath between CustomBuckets and GeometricBuckets should compare bucket tops") {
+      val geom = GeometricBuckets(1.0, 2.0, 4)                     // 1, 2, 4, 8
+      val sameTops = CustomBuckets(Array(1.0, 2.0, 4.0, 8.0))
+      val diffTops = CustomBuckets(Array(1.0, 2.0, 4.0, 16.0))
+      sameTops.similarForMath(geom) shouldEqual true
+      geom.similarForMath(sameTops) shouldEqual true
+      diffTops.similarForMath(geom) shouldEqual false
+      geom.similarForMath(diffTops) shouldEqual false
+    }
   }
 
   describe("Histogram") {
